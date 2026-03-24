@@ -2,8 +2,9 @@ import { Menu } from "@grammyjs/menu";
 import type { Env } from "../../env";
 import { bold, escapeHtml, link } from "../../utils/formatting";
 import { buildMarketOnboardingText, buildTraderOnboardingText } from "../utils/onboarding";
-import { getFormattedMonitorList } from "../commands/list";
-import { buildUnsubscribeReply } from "../commands/unsubscribe";
+import { sendUnsubscribeReply } from "../commands/unsubscribe";
+import { BOT_COMMANDS } from "../commands/catalog";
+import { buildMonitorListReply } from "../utils/monitor-pages";
 
 function getBotUsername(env: Pick<Env, "BOT_INFO">): string | null {
 	try {
@@ -39,7 +40,7 @@ function buildWelcomeText(env: Pick<Env, "BOT_INFO">, firstName?: string, userna
 const HELP_TEXT = [
 	bold("Getting Started"),
 	"",
-	bold("How to setup a monitor::"),
+	bold("How to set up a monitor:"),
 	"Send a condition ID (0x...) or a Polymarket event URL directly in the chat.",
 	"",
 	bold("Available alert types:"),
@@ -50,9 +51,7 @@ const HELP_TEXT = [
 	"- Trader first trades, new market entries, trades",
 	"",
 	bold("Commands:"),
-	"/trader &lt;address&gt; — Track a trader",
-	"/list — View monitors",
-	"/unsubscribe — Manage monitors",
+	...BOT_COMMANDS,
 ].join("\n");
 
 export { buildWelcomeText };
@@ -76,17 +75,15 @@ export function createMainMenu(env: Env) {
 
 	const monitorsMenu = new Menu("monitors-menu")
 		.text("🔍 View Monitors", async (ctx) => {
-			const list = await getFormattedMonitorList(env, ctx.from!.id);
-			await ctx.reply(list ?? "No active monitors.", { parse_mode: "HTML" });
+			const result = await buildMonitorListReply(env, ctx.from!.id);
+			await ctx.reply(result?.text ?? "No active monitors.", {
+				parse_mode: "HTML",
+				reply_markup: result?.keyboard,
+			});
 		})
 		.row()
 		.text("🔧 Manage / Remove", async (ctx) => {
-			const result = await buildUnsubscribeReply(env, ctx.from!.id);
-			if (!result) {
-				await ctx.reply("You have no active monitors.");
-			} else {
-				await ctx.reply(result.text, { reply_markup: result.keyboard });
-			}
+			await sendUnsubscribeReply(ctx, env, ctx.from!.id);
 		})
 		.row()
 		.back("⬅️ Back", async (ctx) => {

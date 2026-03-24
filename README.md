@@ -136,6 +136,8 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<YOUR_
 
 ## Bot Commands
 
+Telegram's command menu/autocomplete is synced when you run `npm run setup`, `npm run webhook:prod`, or `npm run dev`.
+
 | Command | Description |
 |---|---|
 | `/start` | Register and show the main menu |

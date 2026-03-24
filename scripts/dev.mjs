@@ -2,6 +2,11 @@ import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  fetchBotInfo as fetchTelegramBotInfo,
+  setTelegramCommands,
+  setTelegramWebhook,
+} from "./lib/telegram.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -62,22 +67,22 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function setWebhook(botToken, url) {
+async function syncTelegramBot(botToken, url) {
   const webhookUrl = `${url}/telegram`;
   for (let attempt = 1; attempt <= 10; attempt++) {
-    const res = await fetch(
-      `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
-    );
-    const data = await res.json();
-    if (data.ok) {
+    try {
+      await setTelegramWebhook(botToken, url);
+      const commands = await setTelegramCommands(botToken);
       console.log(`${GREEN}Webhook set to ${webhookUrl}${RESET}`);
+      console.log(`${GREEN}Synced ${commands.length} Telegram commands${RESET}`);
       return true;
-    }
-    if (attempt < 10) {
-      console.log(`${CYAN}Waiting for tunnel DNS to propagate (${attempt}/10)...${RESET}`);
-      await sleep(5000);
-    } else {
-      console.error(`${RED}Failed to set webhook: ${data.description}${RESET}`);
+    } catch (error) {
+      if (attempt < 10) {
+        console.log(`${CYAN}Waiting for tunnel DNS to propagate (${attempt}/10)...${RESET}`);
+        await sleep(5000);
+        continue;
+      }
+      console.error(`${RED}Failed to sync Telegram bot: ${error.message}${RESET}`);
     }
   }
   return false;
@@ -95,12 +100,13 @@ let temporaryWebhookBaseUrl = null;
 console.log(`${BOLD}${CYAN}Starting dev environment...${RESET}\n`);
 
 console.log(`${CYAN}Fetching bot info...${RESET}`);
-const botInfoRes = await fetch(`https://api.telegram.org/bot${vars.BOT_TOKEN}/getMe`).then(r => r.json());
-if (!botInfoRes.ok) {
-  console.error(`${RED}Invalid BOT_TOKEN: ${botInfoRes.description}${RESET}`);
+let botInfo;
+try {
+  botInfo = await fetchTelegramBotInfo(vars.BOT_TOKEN);
+} catch (error) {
+  console.error(`${RED}Invalid BOT_TOKEN: ${error.message}${RESET}`);
   process.exit(1);
 }
-const botInfo = botInfoRes.result;
 updateDevVar("BOT_INFO", JSON.stringify(botInfo));
 console.log(`${GREEN}BOT_INFO updated in .dev.vars for @${botInfo.username}${RESET}`);
 
@@ -146,7 +152,7 @@ async function restoreAndExitWithCode(exitCode, reason) {
       const prodUrl = getProductionUrl();
       if (prodUrl) {
         console.log(`${CYAN}Restoring production webhook...${RESET}`);
-        await setWebhook(vars.BOT_TOKEN, prodUrl);
+        await syncTelegramBot(vars.BOT_TOKEN, prodUrl);
       }
     } catch (error) {
       finalExitCode = finalExitCode || 1;
@@ -243,7 +249,7 @@ await new Promise((resolve) => {
   wrangler.stderr.on("data", onStderr);
 });
 
-await setWebhook(vars.BOT_TOKEN, tunnelUrl);
+await syncTelegramBot(vars.BOT_TOKEN, tunnelUrl);
 
 console.log(`\n${BOLD}${GREEN}Dev environment ready!${RESET}`);
 console.log(`${CYAN}Local:  ${RESET}http://localhost:8787`);

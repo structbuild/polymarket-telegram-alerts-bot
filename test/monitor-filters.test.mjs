@@ -15,7 +15,7 @@ test("normalizes spike webhook defaults for Struct comparisons", () => {
   assert.deepEqual(filters, {
     condition_ids: ["0xabc"],
     min_probability_change_pct: 10,
-    spike_direction: "up",
+    spike_direction: "both",
   });
 });
 

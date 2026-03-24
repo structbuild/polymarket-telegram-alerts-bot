@@ -3,6 +3,11 @@ import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { replaceTomlVar } from "./lib/toml.mjs";
+import {
+  fetchBotInfo as fetchTelegramBotInfo,
+  setTelegramCommands,
+  setTelegramWebhook as updateTelegramWebhook,
+} from "./lib/telegram.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -72,12 +77,6 @@ function parseDevVars(content) {
   return vars;
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
 async function ensureDevVars() {
   header("Step 1: Checking .dev.vars");
   const devVarsPath = filePath(".dev.vars");
@@ -121,12 +120,7 @@ function checkWranglerAuth() {
 
 async function fetchBotInfo(botToken) {
   header("Step 4: Fetching bot info from Telegram");
-  const data = await fetchJson(`https://api.telegram.org/bot${botToken}/getMe`);
-  if (!data.ok) {
-    error(`Telegram API error: ${data.description || "Unknown error"}`);
-    process.exit(1);
-  }
-  const botInfo = data.result;
+  const botInfo = await fetchTelegramBotInfo(botToken);
   success(`Bot: @${botInfo.username} (ID: ${botInfo.id})`);
   return botInfo;
 }
@@ -255,7 +249,7 @@ function updateWebhookBaseUrl(workerUrl) {
   success(`WEBHOOK_BASE_URL updated to ${workerUrl}`);
 }
 
-async function setTelegramWebhook(botToken, workerUrl) {
+async function syncTelegramWebhookStep(botToken, workerUrl) {
   header("Step 10: Setting Telegram webhook");
   if (!workerUrl) {
     info("Skipping webhook setup - no worker URL available.");
@@ -263,16 +257,23 @@ async function setTelegramWebhook(botToken, workerUrl) {
     return;
   }
 
-  const webhookUrl = `${workerUrl}/telegram`;
-  const data = await fetchJson(
-    `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
-  );
-
-  if (!data.ok) {
-    error(`Failed to set webhook: ${data.description || "Unknown error"}`);
+  try {
+    const webhookUrl = await updateTelegramWebhook(botToken, workerUrl);
+    success(`Telegram webhook set to ${webhookUrl}`);
+  } catch (e) {
+    error(`Failed to set webhook: ${e.message}`);
     return;
   }
-  success(`Telegram webhook set to ${webhookUrl}`);
+}
+
+async function syncTelegramCommandsStep(botToken) {
+  header("Step 11: Syncing Telegram commands");
+  try {
+    const commands = await setTelegramCommands(botToken);
+    success(`Synced ${commands.length} Telegram commands`);
+  } catch (e) {
+    error(`Failed to sync Telegram commands: ${e.message}`);
+  }
 }
 
 function printSummary(botInfo, databaseId, workerUrl) {
@@ -308,7 +309,8 @@ async function main() {
     success("Redeployed with updated WEBHOOK_BASE_URL");
   }
 
-  await setTelegramWebhook(vars.BOT_TOKEN, workerUrl);
+  await syncTelegramWebhookStep(vars.BOT_TOKEN, workerUrl);
+  await syncTelegramCommandsStep(vars.BOT_TOKEN);
 
   printSummary(botInfo, databaseId, workerUrl);
 }

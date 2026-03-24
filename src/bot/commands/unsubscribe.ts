@@ -1,47 +1,36 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot } from "grammy";
 import type { Env } from "../../env";
-import {
-  getMarketMonitorsByUser,
-  getTraderMonitorsByUser,
-} from "../../db/monitors";
-import { shortenAddress, truncate } from "../../utils/formatting";
+import { createMonitorRemovalSession, deleteMonitorRemovalSession } from "../../db/monitor-removal-sessions";
+import { buildUnsubscribeReply } from "../utils/monitor-pages";
 
-export async function buildUnsubscribeReply(
+type ReplyContext = {
+  reply: (
+    text: string,
+    options?: any
+  ) => Promise<{ message_id: number }>;
+};
+
+export async function sendUnsubscribeReply(
+  ctx: ReplyContext,
   env: Env,
   telegramId: number
-): Promise<{ text: string; keyboard: InlineKeyboard } | null> {
-  const [marketSubs, traderSubs] = await Promise.all([
-    getMarketMonitorsByUser(env.DB, telegramId),
-    getTraderMonitorsByUser(env.DB, telegramId),
-  ]);
-
-  if (marketSubs.length === 0 && traderSubs.length === 0) {
-    return null;
+): Promise<void> {
+  const result = await buildUnsubscribeReply(env, telegramId);
+  if (!result) {
+    await deleteMonitorRemovalSession(env.DB, telegramId);
+    await ctx.reply("You have no active monitors.");
+    return;
   }
 
-  const keyboard = new InlineKeyboard();
-
-  marketSubs.forEach((sub) => {
-    keyboard.text(truncate(sub.market_title, 40), `um:${sub.id}`).row();
+  const message = await ctx.reply(result.text, {
+    parse_mode: "HTML",
+    reply_markup: result.keyboard,
   });
-
-  traderSubs.forEach((sub) => {
-    const label = sub.label ?? shortenAddress(sub.wallet_address);
-    keyboard.text(`[Trader] ${label}`, `ut:${sub.id}`).row();
-  });
-
-  keyboard.text("Remove All", "ua").row();
-
-  return { text: "Select a monitor to remove:", keyboard };
+  await createMonitorRemovalSession(env.DB, telegramId, message.message_id);
 }
 
 export function registerUnsubscribe(bot: Bot, env: Env): void {
   bot.command("unsubscribe", async (ctx) => {
-    const result = await buildUnsubscribeReply(env, ctx.from!.id);
-    if (!result) {
-      await ctx.reply("You have no active monitors.");
-      return;
-    }
-    await ctx.reply(result.text, { reply_markup: result.keyboard });
+    await sendUnsubscribeReply(ctx, env, ctx.from!.id);
   });
 }

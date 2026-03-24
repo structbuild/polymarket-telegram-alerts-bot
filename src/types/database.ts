@@ -46,3 +46,10 @@ export interface DbMonitorDraft {
   message_id: number | null;
   created_at: string;
 }
+
+export interface DbMonitorRemovalSession {
+  telegram_id: number;
+  selected_monitor_keys: string;
+  message_id: number | null;
+  created_at: string;
+}

@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS monitor_drafts (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS monitor_removal_sessions (
+    telegram_id INTEGER PRIMARY KEY,
+    selected_monitor_keys TEXT DEFAULT '[]',
+    message_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_market_mons_condition ON market_monitors(condition_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_market_mons_event_slug ON market_monitors(event_slug, is_active);
 CREATE INDEX IF NOT EXISTS idx_trader_mons_wallet ON trader_monitors(wallet_address, is_active);

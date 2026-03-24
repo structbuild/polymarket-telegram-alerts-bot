@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { syncTelegramBot } from "./lib/telegram.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -23,17 +24,15 @@ function getProductionUrl() {
   return match?.[1] ?? null;
 }
 
-async function setWebhook(botToken, url) {
-  const webhookUrl = `${url}/telegram`;
-  const res = await fetch(
-    `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
-  );
-  const data = await res.json();
-  if (!data.ok) {
-    console.error(`\x1b[31m\u2717\x1b[0m Failed: ${data.description}`);
+async function syncWebhookAndCommands(botToken, url) {
+  try {
+    const { webhookUrl, commands } = await syncTelegramBot(botToken, url);
+    console.log(`\x1b[32m\u2713\x1b[0m Telegram webhook set to ${webhookUrl}`);
+    console.log(`\x1b[32m\u2713\x1b[0m Synced ${commands.length} Telegram commands`);
+  } catch (error) {
+    console.error(`\x1b[31m\u2717\x1b[0m Failed: ${error.message}`);
     process.exit(1);
   }
-  console.log(`\x1b[32m\u2713\x1b[0m Telegram webhook set to ${webhookUrl}`);
 }
 
 const command = process.argv[2];
@@ -51,16 +50,18 @@ if (command === "dev") {
     console.error("Example: node scripts/webhook.mjs dev https://abc123.trycloudflare.com");
     process.exit(1);
   }
-  await setWebhook(vars.BOT_TOKEN, tunnelUrl.replace(/\/$/, ""));
+  await syncWebhookAndCommands(vars.BOT_TOKEN, tunnelUrl.replace(/\/$/, ""));
 } else if (command === "prod") {
   const prodUrl = getProductionUrl();
   if (!prodUrl) {
     console.error("\x1b[31m\u2717\x1b[0m Could not read WEBHOOK_BASE_URL from wrangler.toml");
     process.exit(1);
   }
-  await setWebhook(vars.BOT_TOKEN, prodUrl);
+  await syncWebhookAndCommands(vars.BOT_TOKEN, prodUrl);
 } else {
   console.log("Usage:");
   console.log("  node scripts/webhook.mjs dev <TUNNEL_URL>   Point bot to local dev tunnel");
   console.log("  node scripts/webhook.mjs prod               Point bot back to production");
+  console.log("");
+  console.log("Both commands also sync the bot command menu shown in Telegram.");
 }

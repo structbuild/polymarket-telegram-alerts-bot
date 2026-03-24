@@ -6,6 +6,7 @@ import {
   normalizeStructWebhookFilters,
   type MonitorFilters,
 } from "../services/monitor-filters";
+import { logError } from "../utils/logging";
 
 interface WebhookDeps {
   client: StructClient;
@@ -29,13 +30,26 @@ export async function createMonitorWebhook(
   filters: MonitorFilters,
   description: string
 ): Promise<string> {
-  const response = await deps.client.webhooks.create({
+  const createPayload = {
     url: placeholderWebhookUrl(deps.webhookBaseUrl),
     event: eventType,
     secret: deps.webhookSecret,
     filters,
     description,
-  });
+  };
+
+  let response: Awaited<ReturnType<WebhookDeps["client"]["webhooks"]["create"]>>;
+  try {
+    response = await deps.client.webhooks.create(createPayload);
+  } catch (error) {
+    logError("Failed to create Struct webhook", {
+      eventType,
+      description,
+      filters,
+      webhookBaseUrl: deps.webhookBaseUrl,
+    }, error);
+    throw error;
+  }
 
   const webhookId = response.data.id;
   try {
@@ -45,6 +59,14 @@ export async function createMonitorWebhook(
     });
   } catch (error) {
     await deleteMonitorWebhook(deps, webhookId);
+    logError("Failed to update Struct webhook route", {
+      webhookId,
+      eventType,
+      description,
+      filters,
+      webhookBaseUrl: deps.webhookBaseUrl,
+      expectedUrl: webhookUrl(deps.webhookBaseUrl, webhookId),
+    }, error);
     throw error;
   }
 
@@ -122,6 +144,51 @@ export async function findReusableMonitorWebhook(
   return bestMatch.webhookId;
 }
 
+export async function findAndExpandWebhook(
+  deps: WebhookDeps,
+  eventType: PolymarketWebhookEvent,
+  requestedFilters: MonitorFilters,
+  allConditionIds: string[],
+  candidateWebhookIds: string[]
+): Promise<string | null> {
+  const requestedNormalized = normalizeStructWebhookFilters(eventType, requestedFilters);
+  const requestedCompare = { ...requestedNormalized };
+  delete requestedCompare.condition_ids;
+
+  for (const webhookId of candidateWebhookIds) {
+    const webhook = await getWebhook(deps, webhookId);
+    if (!webhook || webhook.event !== eventType) continue;
+
+    const existingFilters = normalizeStructWebhookFilters(eventType, webhook.filters ?? {});
+    const existingCompare = { ...existingFilters };
+    delete existingCompare.condition_ids;
+
+    if (JSON.stringify(existingCompare) !== JSON.stringify(requestedCompare)) continue;
+
+    const sortedIds = [...new Set(allConditionIds)].sort();
+    const existingIds = Array.isArray(existingFilters.condition_ids)
+      ? [...new Set(existingFilters.condition_ids as string[])].sort()
+      : [];
+
+    const expectedUrl = webhookUrl(deps.webhookBaseUrl, webhookId);
+    const needsUpdate = JSON.stringify(existingIds) !== JSON.stringify(sortedIds) || webhook.url !== expectedUrl;
+
+    if (needsUpdate) {
+      await deps.client.webhooks.update({
+        webhookId,
+        url: expectedUrl,
+        event: webhook.event,
+        description: webhook.description ?? undefined,
+        filters: { ...existingFilters, condition_ids: sortedIds } as Record<string, unknown>,
+      });
+    }
+
+    return webhookId;
+  }
+
+  return null;
+}
+
 export async function deleteMonitorWebhook(
   deps: WebhookDeps,
   webhookId: string
@@ -133,8 +200,35 @@ export async function deleteMonitorWebhook(
       return;
     }
 
-    console.error("Failed to delete Struct webhook", webhookId, error);
+    logError("Failed to delete Struct webhook", {
+      webhookId,
+      webhookBaseUrl: deps.webhookBaseUrl,
+      expectedUrl: webhookUrl(deps.webhookBaseUrl, webhookId),
+    }, error);
   }
+}
+
+export async function removeConditionIdFromWebhook(
+  deps: WebhookDeps,
+  webhookId: string,
+  conditionId: string
+): Promise<void> {
+  const webhook = await getWebhook(deps, webhookId);
+  if (!webhook?.filters) return;
+
+  const filters = webhook.filters as Record<string, unknown>;
+  const conditionIds = Array.isArray(filters.condition_ids) ? filters.condition_ids as string[] : [];
+  const updated = conditionIds.filter((id) => id !== conditionId);
+
+  if (updated.length === conditionIds.length) return;
+
+  await deps.client.webhooks.update({
+    webhookId,
+    url: webhook.url,
+    event: webhook.event,
+    description: webhook.description ?? undefined,
+    filters: { ...filters, condition_ids: updated } as Record<string, unknown>,
+  });
 }
 
 export async function deleteMonitorWebhookStrict(

@@ -5,7 +5,7 @@ import { createStructClient } from "../../struct/client";
 import { lookupByConditionId, lookupByEventSlug, lookupByMarketSlug } from "../../services/market-lookup";
 import { getDraft, upsertMarketDraft, updateDraftAwaitingInput, updateDraftFilter, updateDraftMessageId } from "../../db/drafts";
 import { bold, escapeHtml } from "../../utils/formatting";
-import { buildEventTypeKeyboard, buildFilterKeyboard, buildEventMarketKeyboard, MARKET_EVENT_TYPES, FILTER_CONFIGS } from "../keyboards/filters";
+import { buildEventTypeKeyboard, buildFilterKeyboard, buildEventMarketSelectKeyboard, MARKET_EVENT_TYPES, FILTER_CONFIGS } from "../keyboards/filters";
 import { isValidAddress, handleWalletAddress } from "../commands/trader";
 import { buildFilterText } from "../utils/monitor-draft";
 
@@ -94,9 +94,10 @@ async function handlePolymarketUrl(ctx: Context, env: Env, eventSlug: string, ma
     question: m.question ?? null,
     title: m.title ?? null,
   })));
+  await updateDraftFilter(env.DB, telegramId, "_selected_indices", []);
 
-  const keyboard = buildEventMarketKeyboard(markets);
-  const text = `${bold(escapeHtml(eventTitle))}\n\nThis event has multiple markets. Choose one:`;
+  const keyboard = buildEventMarketSelectKeyboard(markets, []);
+  const text = `${bold(escapeHtml(eventTitle))}\n\nThis event has ${markets.length} markets. Select the ones you want to monitor:`;
   await ctx.api.editMessageText(telegramId, msg.message_id, text, {
     parse_mode: "HTML",
     reply_markup: keyboard,

@@ -170,7 +170,7 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
     if (p.volume_usd != null) lines.push(`💵 Volume: ${code(formatUsd(p.volume_usd))}`);
     if (p.txns != null) lines.push(`📈 Transactions: ${code(p.txns.toLocaleString("en-US"))}`);
     if (p.unique_traders != null) lines.push(`👥 Unique Traders: ${code(p.unique_traders.toLocaleString("en-US"))}`);
-    if (p.fees != null) lines.push(`💰 Fees: ${code(formatUsd(p.fees))}`);
+    if (p.fees != null && p.fees > 0) lines.push(`💰 Fees: ${code(formatUsd(p.fees))}`);
 
     const linkLine = linksSection(eventSlug);
     if (linkLine) lines.push("", linkLine);

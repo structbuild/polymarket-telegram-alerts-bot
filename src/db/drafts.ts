@@ -52,20 +52,27 @@ export async function updateDraftEventType(
     .run();
 }
 
-export async function updateDraftFilter(
+export async function mergeDraftFilters(
   db: D1Database,
   telegramId: number,
-  filterName: string,
-  filterValue: unknown
+  partial: Record<string, unknown>
 ): Promise<void> {
+  const keys = Object.keys(partial);
+  if (keys.length === 0) {
+    return;
+  }
+
   const draft = await getDraft(db, telegramId);
   if (!draft) return;
 
-  const filters = JSON.parse(draft.filters);
-  if (filterValue === null || filterValue === undefined) {
-    delete filters[filterName];
-  } else {
-    filters[filterName] = filterValue;
+  const filters = JSON.parse(draft.filters) as Record<string, unknown>;
+  for (const key of keys) {
+    const value = partial[key];
+    if (value === null || value === undefined) {
+      delete filters[key];
+    } else {
+      filters[key] = value;
+    }
   }
 
   await db
@@ -74,6 +81,15 @@ export async function updateDraftFilter(
     )
     .bind(JSON.stringify(filters), telegramId)
     .run();
+}
+
+export async function updateDraftFilter(
+  db: D1Database,
+  telegramId: number,
+  filterName: string,
+  filterValue: unknown
+): Promise<void> {
+  await mergeDraftFilters(db, telegramId, { [filterName]: filterValue });
 }
 
 export async function updateDraftAwaitingInput(

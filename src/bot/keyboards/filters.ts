@@ -23,6 +23,7 @@ export interface FilterConfig {
 }
 
 const SPIKE_DIRECTION_OPTIONS = [
+  { value: "both", label: "Both" },
   { value: "up", label: "Up" },
   { value: "down", label: "Down" },
 ];
@@ -200,6 +201,47 @@ export function buildEventMarketKeyboard(
     kb.text(`${page + 1}/${totalPages}`, "noop");
     if (page < totalPages - 1) kb.text("Next »", `emp:${page + 1}`);
     kb.row();
+  }
+
+  return kb;
+}
+
+export function buildEventMarketSelectKeyboard(
+  markets: { condition_id: string; question: string; title: string | null }[],
+  selectedIndices: number[],
+  page = 0
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  const totalPages = Math.ceil(markets.length / EVENT_MARKET_PAGE_SIZE);
+  const start = page * EVENT_MARKET_PAGE_SIZE;
+  const pageMarkets = markets.slice(start, start + EVENT_MARKET_PAGE_SIZE);
+
+  for (let i = 0; i < pageMarkets.length; i++) {
+    const globalIndex = start + i;
+    const market = pageMarkets[i];
+    const isSelected = selectedIndices.includes(globalIndex);
+    let label = market.title || market.question || "Untitled";
+    if (label.length > 36) {
+      label = label.slice(0, 33) + "...";
+    }
+    kb.text(`${isSelected ? "☑️" : "⏹️"} ${label}`, `emt:${globalIndex}`).row();
+  }
+
+  if (totalPages > 1) {
+    if (page > 0) kb.text("« Prev", `emsp:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, "noop");
+    if (page < totalPages - 1) kb.text("Next »", `emsp:${page + 1}`);
+    kb.row();
+  }
+
+  const allSelected = selectedIndices.length === markets.length;
+  kb.text(allSelected ? "Deselect All" : "Select All", "ema").row();
+
+  if (selectedIndices.length > 0) {
+    const count = selectedIndices.length;
+    kb.text(`Continue with ${count} market${count > 1 ? "s" : ""} →`, "emc");
+  } else {
+    kb.text("Select at least one market", "noop");
   }
 
   return kb;

@@ -145,7 +145,7 @@ function normalizeSpikeDirection(
     return value;
   }
 
-  return "up";
+  return "both";
 }
 
 function minReusePenalty(existingValue: unknown, requestedValue: unknown): number | null {
