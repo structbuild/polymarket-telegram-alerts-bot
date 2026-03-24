@@ -1,0 +1,6 @@
+BOT_TOKEN=your-telegram-bot-token
+# Auto-populated by npm run dev — leave empty or set manually
+BOT_INFO=
+STRUCT_API_KEY=your-struct-api-key
+# Generate with: openssl rand -hex 32
+STRUCT_WEBHOOK_SECRET=your-webhook-signing-secret

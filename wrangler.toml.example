@@ -1,0 +1,15 @@
+name = "polymarket-alerts-bot"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Auto-populated by npm run setup — leave empty or set manually
+BOT_INFO = ''
+WEBHOOK_BASE_URL = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "polymarket-alerts"
+# Auto-populated by npm run setup
+database_id = ""
