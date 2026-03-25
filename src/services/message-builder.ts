@@ -82,14 +82,30 @@ function outcomePricesLine(outcomes?: OutcomePrice[]): string | null {
 type SpikePayload = ProbabilitySpikePayload | PriceSpikePayload;
 type TraderPayload = FirstTradePayload | NewMarketPayload | WhaleTradePayload;
 
-function buildSpikeMessage(emoji: string, title: string, payload: SpikePayload, market: MarketContext | null): string {
+function isProbabilitySpikePayload(p: SpikePayload): p is ProbabilitySpikePayload {
+  return "previous_probability" in p;
+}
+
+function formatSpikeLevel(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function buildSpikeMessage(title: string, payload: SpikePayload, market: MarketContext | null): string {
   const direction = payload.spike_direction === "up" ? "UP" : "DOWN";
+  const directionEmoji = payload.spike_direction === "up" ? "📈" : "📉";
   const change = `${payload.spike_pct > 0 ? "+" : ""}${payload.spike_pct.toFixed(2)}%`;
   const question = market?.question ?? null;
   const eventSlug = payload.event_slug ?? market?.event_slug ?? null;
+  const previousValue = isProbabilitySpikePayload(payload)
+    ? payload.previous_probability
+    : payload.previous_price;
+  const currentValue = isProbabilitySpikePayload(payload)
+    ? payload.current_probability
+    : payload.current_price;
+  const rangeLine = `📊 ${code(formatSpikeLevel(previousValue))} → ${code(formatSpikeLevel(currentValue))} (${code(change)})`;
 
   const lines = [
-    `${emoji} ${bold(`${title} ${direction}`)}`,
+    `${directionEmoji} ${bold(`${title} ${direction}`)}`,
   ];
 
   if (question) {
@@ -99,11 +115,8 @@ function buildSpikeMessage(emoji: string, title: string, payload: SpikePayload, 
   lines.push(
     "",
     `🎯 Outcome: ${bold(escapeHtml(payload.outcome ?? ""))}`,
-    `📉 Change: ${code(change)}`,
+    rangeLine,
   );
-
-  const prices = outcomePricesLine(market?.outcomes);
-  if (prices) lines.push(prices);
 
   const linkLine = linksSection(eventSlug);
   if (linkLine) lines.push("", linkLine);
@@ -179,10 +192,10 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
   },
 
   probability_spike: (p: ProbabilitySpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("📈", "Probability Spike", p, market),
+    buildSpikeMessage("Probability Spike", p, market),
 
   price_spike: (p: PriceSpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("💲", "Price Spike", p, market),
+    buildSpikeMessage("Price Spike", p, market),
 
   close_to_bond: (p: CloseToBondPayload, market: MarketContext | null) => {
     const sideEmoji = p.side.toLowerCase() === "buy" ? "🟢" : "🔴";
@@ -261,8 +274,10 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       condition_id: "0xabcdef1234567890abcdef1234567890abcdef12",
       event_slug: "will-bitcoin-hit-100k-2026",
       outcome: "Yes",
+      previous_probability: 0.64,
+      current_probability: 0.72,
       spike_direction: "up",
-      spike_pct: 12.45,
+      spike_pct: 12.5,
     } satisfies ProbabilitySpikePayload,
     market: {
       question: "Will Bitcoin hit $100k in 2026?",
@@ -281,8 +296,10 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       condition_id: "0xfedcba0987654321fedcba0987654321fedcba09",
       event_slug: "us-presidential-election-2028",
       outcome: "No",
+      previous_price: 0.6,
+      current_price: 0.55,
       spike_direction: "down",
-      spike_pct: -8.32,
+      spike_pct: -8.33,
     } satisfies PriceSpikePayload,
     market: {
       question: "Will the Democrats win the 2028 Presidential Election?",
