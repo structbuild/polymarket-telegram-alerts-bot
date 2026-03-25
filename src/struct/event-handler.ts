@@ -304,6 +304,16 @@ export async function handleStructWebhook(
     : raw;
   if (!eventType) return jsonResponse(200);
 
+  console.log(
+    JSON.stringify({
+      scope: "struct_webhook",
+      webhookId,
+      eventType,
+      xWebhookEvent: request.headers.get("x-webhook-event"),
+      body,
+    })
+  );
+
   const market = await enrichWithMarketData(env, payload);
 
   const result = formatMessage(eventType, payload as WebhookPayload, market);

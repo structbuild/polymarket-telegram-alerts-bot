@@ -18,6 +18,7 @@ import {
   formatShares,
   link,
 } from "../utils/formatting";
+import { toFiniteNumber } from "./monitor-filters";
 
 const POLYMARKET_URL = "https://polymarket.com/event";
 const POLYGONSCAN_TX = "https://polygonscan.com/tx";
@@ -81,28 +82,44 @@ function outcomePricesLine(outcomes?: OutcomePrice[]): string | null {
 
 type SpikePayload = ProbabilitySpikePayload | PriceSpikePayload;
 type TraderPayload = FirstTradePayload | NewMarketPayload | WhaleTradePayload;
+type SpikeEventKind = "probability_spike" | "price_spike";
 
-function isProbabilitySpikePayload(p: SpikePayload): p is ProbabilitySpikePayload {
-  return "previous_probability" in p;
-}
-
-function formatSpikeLevel(value: number): string {
+function formatSpikeLevelDisplay(value: number | null): string {
+  if (value === null) return "—";
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function buildSpikeMessage(title: string, payload: SpikePayload, market: MarketContext | null): string {
+function spikeLevels(kind: SpikeEventKind, payload: SpikePayload): { previous: number | null; current: number | null } {
+  if (kind === "probability_spike") {
+    const p = payload as ProbabilitySpikePayload;
+    return {
+      previous: toFiniteNumber(p.previous_probability),
+      current: toFiniteNumber(p.current_probability),
+    };
+  }
+  const p = payload as PriceSpikePayload;
+  return {
+    previous: toFiniteNumber(p.previous_price),
+    current: toFiniteNumber(p.current_price),
+  };
+}
+
+function buildSpikeMessage(
+  kind: SpikeEventKind,
+  title: string,
+  payload: SpikePayload,
+  market: MarketContext | null
+): string {
   const direction = payload.spike_direction === "up" ? "UP" : "DOWN";
   const directionEmoji = payload.spike_direction === "up" ? "📈" : "📉";
-  const change = `${payload.spike_pct > 0 ? "+" : ""}${payload.spike_pct.toFixed(2)}%`;
+  const spikePct = toFiniteNumber(payload.spike_pct) ?? Number.NaN;
+  const change = Number.isFinite(spikePct)
+    ? `${spikePct > 0 ? "+" : ""}${spikePct.toFixed(2)}%`
+    : "—";
   const question = market?.question ?? null;
   const eventSlug = payload.event_slug ?? market?.event_slug ?? null;
-  const previousValue = isProbabilitySpikePayload(payload)
-    ? payload.previous_probability
-    : payload.previous_price;
-  const currentValue = isProbabilitySpikePayload(payload)
-    ? payload.current_probability
-    : payload.current_price;
-  const rangeLine = `📊 ${code(formatSpikeLevel(previousValue))} → ${code(formatSpikeLevel(currentValue))} (${code(change)})`;
+  const { previous: previousValue, current: currentValue } = spikeLevels(kind, payload);
+  const rangeLine = `📊 ${code(formatSpikeLevelDisplay(previousValue))} → ${code(formatSpikeLevelDisplay(currentValue))} (${code(change)})`;
 
   const lines = [
     `${directionEmoji} ${bold(`${title} ${direction}`)}`,
@@ -192,10 +209,10 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
   },
 
   probability_spike: (p: ProbabilitySpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("Probability Spike", p, market),
+    buildSpikeMessage("probability_spike", "Probability Spike", p, market),
 
   price_spike: (p: PriceSpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("Price Spike", p, market),
+    buildSpikeMessage("price_spike", "Price Spike", p, market),
 
   close_to_bond: (p: CloseToBondPayload, market: MarketContext | null) => {
     const sideEmoji = p.side.toLowerCase() === "buy" ? "🟢" : "🔴";

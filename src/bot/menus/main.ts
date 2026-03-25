@@ -71,7 +71,9 @@ export function createMainMenu(env: Env) {
 		.row()
 		.submenu("💬 Help", "help-menu", async (ctx) => {
 			await ctx.editMessageText(HELP_TEXT, { parse_mode: "HTML" });
-		});
+		})
+		.row()
+		.url("⭐ GitHub", "https://github.com/structbuild/polymarket-telegram-alerts-bot");
 
 	const monitorsMenu = new Menu("monitors-menu")
 		.text("🔍 View Monitors", async (ctx) => {
