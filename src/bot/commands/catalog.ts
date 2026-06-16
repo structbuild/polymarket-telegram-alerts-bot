@@ -4,5 +4,5 @@ export const BOT_COMMANDS = [
   "/list - View active monitors",
   "/unsubscribe - Remove active monitors",
   "/trader &lt;address&gt; - Track a trader wallet",
-  "/example [1-7] - Preview alert formats",
+  "/example [1-11] - Preview alert formats",
 ] as const;

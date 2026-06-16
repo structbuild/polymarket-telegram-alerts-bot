@@ -21,7 +21,7 @@ async function handleConditionId(ctx: Context, env: Env, conditionId: string): P
   }
 
   const title = market.question ?? market.title ?? "";
-  await upsertMarketDraft(env.DB, telegramId, market.condition_id, market.slug, title, market.event_slug ?? "");
+  await upsertMarketDraft(env.DB, telegramId, market.condition_id, market.market_slug ?? "", title, market.event_slug ?? "");
 
   const keyboard = buildEventTypeKeyboard(MARKET_EVENT_TYPES);
   const text = `${bold(escapeHtml(title))}\n\nChoose an event type:`;
@@ -45,7 +45,7 @@ async function handlePolymarketUrl(ctx: Context, env: Env, eventSlug: string, ma
     }
 
     const title = market.question ?? market.title ?? "";
-    await upsertMarketDraft(env.DB, telegramId, market.condition_id, market.slug, title, market.event_slug ?? "");
+    await upsertMarketDraft(env.DB, telegramId, market.condition_id, market.market_slug ?? "", title, market.event_slug ?? "");
 
     const keyboard = buildEventTypeKeyboard(MARKET_EVENT_TYPES);
     const text = `${bold(escapeHtml(title))}\n\nChoose an event type:`;
@@ -121,11 +121,16 @@ async function handleFilterInput(ctx: Context, env: Env, awaitingInput: string, 
       await ctx.reply("Please enter a valid number.");
       return;
     }
-    if (awaitingInput === "min_usd_value" && num < 10) {
-      await ctx.reply("Minimum USD value must be at least $10.");
+    if (awaitingInput === "min_usd_value" && num < 1) {
+      await ctx.reply("Minimum USD value must be at least $1.");
       return;
     }
     parsedValue = num;
+  } else if (filterConfig.type === "list") {
+    parsedValue = text
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
   }
 
   const draftFilters = JSON.parse(draft.filters);

@@ -7,19 +7,26 @@ const MIN_FILTER_FIELDS = new Set([
   "min_probability",
   "min_probability_change_pct",
   "min_price_change_pct",
+  "min_price",
   "min_volume_usd",
   "min_fees",
   "min_txns",
+  "spike_ratio",
+  "min_realized_pnl_usd",
 ]);
 
 const MAX_FILTER_FIELDS = new Set([
   "max_probability",
+  "max_price",
   "max_volume_usd",
 ]);
 
 const EXACT_LIST_FIELDS = new Set([
   "condition_ids",
   "wallet_addresses",
+  "traders",
+  "tags",
+  "series_slugs",
 ]);
 
 const SUBSET_LIST_FIELDS = new Set([
@@ -92,7 +99,7 @@ function normalizeNumberArray(value: unknown): number[] {
 }
 
 function normalizeListField(key: string, value: unknown): string[] | number[] {
-  if (key === "wallet_addresses") {
+  if (key === "wallet_addresses" || key === "traders" || key === "tags" || key === "series_slugs") {
     return normalizeStringArray(value, (entry) => entry.toLowerCase());
   }
   if (key === "position_outcome_indices") {

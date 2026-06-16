@@ -4,23 +4,30 @@ import type { PolymarketWebhookEvent } from "@structbuild/sdk";
 export const MARKET_EVENT_TYPES: { key: PolymarketWebhookEvent; label: string }[] = [
   { key: "probability_spike", label: "Probability Spike" },
   { key: "price_spike", label: "Price Spike" },
+  { key: "price_threshold", label: "Price Threshold" },
   { key: "condition_metrics", label: "Market Metrics" },
+  { key: "market_volume_spike", label: "Volume Spike" },
+  { key: "market_volume_milestone", label: "Volume Milestone" },
   { key: "close_to_bond", label: "Close-to-Bond" },
 ];
 
 export const TRADER_EVENT_TYPES: { key: PolymarketWebhookEvent; label: string }[] = [
   { key: "trader_first_trade", label: "First Trade" },
   { key: "trader_new_market", label: "New Market Entry" },
-  { key: "trader_whale_trade", label: "Trade" },
+  { key: "trader_new_trade", label: "All Trades" },
+  { key: "trader_global_pnl", label: "Global PnL" },
 ];
 
 export interface FilterConfig {
   key: string;
   label: string;
-  type: "number" | "boolean" | "enum" | "multi";
+  type: "number" | "boolean" | "enum" | "multi" | "list";
   options?: { value: string; label: string }[];
   wide?: boolean;
 }
+
+const TAG_FILTER: FilterConfig = { key: "tags", label: "Tags", type: "list", wide: true };
+const SERIES_FILTER: FilterConfig = { key: "series_slugs", label: "Series", type: "list", wide: true };
 
 const SPIKE_DIRECTION_OPTIONS = [
   { value: "both", label: "Both" },
@@ -39,6 +46,13 @@ const TIMEFRAME_OPTIONS = [
   { value: "30d", label: "30d" },
 ];
 
+const PNL_TIMEFRAME_OPTIONS = [
+  { value: "1d", label: "1d" },
+  { value: "7d", label: "7d" },
+  { value: "30d", label: "30d" },
+  { value: "lifetime", label: "Lifetime" },
+];
+
 export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
   probability_spike: [
     { key: "min_probability_change_pct", label: "Min Change %", type: "number" },
@@ -51,6 +65,22 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
     { key: "spike_direction", label: "Direction", type: "enum", options: SPIKE_DIRECTION_OPTIONS },
     { key: "window_secs", label: "Window (secs)", type: "number" },
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
+    TAG_FILTER,
+    SERIES_FILTER,
+  ],
+  price_threshold: [
+    { key: "min_price", label: "Min Price", type: "number" },
+    { key: "max_price", label: "Max Price", type: "number" },
+    { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
+    TAG_FILTER,
+    SERIES_FILTER,
+  ],
+  market_volume_spike: [
+    { key: "spike_ratio", label: "Min Spike (x)", type: "number" },
+    { key: "timeframes", label: "Timeframes", type: "multi", options: TIMEFRAME_OPTIONS, wide: true },
+  ],
+  market_volume_milestone: [
+    { key: "timeframes", label: "Timeframes", type: "multi", options: TIMEFRAME_OPTIONS, wide: true },
   ],
   condition_metrics: [
     { key: "min_volume_usd", label: "Min Volume $", type: "number" },
@@ -63,6 +93,8 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
     { key: "min_probability", label: "Min Probability", type: "number" },
     { key: "max_probability", label: "Max Probability", type: "number" },
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
+    TAG_FILTER,
+    SERIES_FILTER,
   ],
   trader_first_trade: [
     { key: "min_usd_value", label: "Min USD", type: "number" },
@@ -73,11 +105,16 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
   trader_new_market: [
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
   ],
-  trader_whale_trade: [
+  trader_new_trade: [
     { key: "min_usd_value", label: "Min USD", type: "number" },
     { key: "min_probability", label: "Min Prob", type: "number" },
     { key: "max_probability", label: "Max Prob", type: "number" },
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
+  ],
+  trader_global_pnl: [
+    { key: "min_realized_pnl_usd", label: "Min PnL $", type: "number" },
+    { key: "min_volume_usd", label: "Min Volume $", type: "number" },
+    { key: "timeframes", label: "Timeframes", type: "multi", options: PNL_TIMEFRAME_OPTIONS, wide: true },
   ],
 };
 
@@ -116,7 +153,7 @@ export function buildFilterKeyboard(
         buttonLabel = `${config.label}: ${opt?.label ?? value}`;
       }
       kb.text(buttonLabel, `ft:${config.key}`);
-    } else if (config.type === "multi") {
+    } else if (config.type === "multi" || config.type === "list") {
       if (Array.isArray(value) && value.length > 0) {
         buttonLabel = `${config.label}: ${value.join(", ")}`;
       }

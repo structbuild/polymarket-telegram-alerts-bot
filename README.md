@@ -12,8 +12,13 @@ Send any Polymarket URL to the bot and choose from:
 
 - **Probability Spike** -- rapid probability changes on an outcome. Filter by minimum change %, direction (up/down), and time window.
 - **Price Spike** -- rapid price movements. Same filters as probability spike.
+- **Price Threshold** -- an outcome's price crosses a target level. Filter by min/max price.
 - **Market Metrics** -- periodic activity summaries (volume, fees, transactions). Filter by volume range, min fees, min transactions, and timeframes (1m to 30d).
+- **Volume Spike** -- a market's volume grows by a configured multiple within a window. Filter by minimum spike multiple and timeframes.
+- **Volume Milestone** -- a market's cumulative volume crosses a USD milestone. Filter by timeframes.
 - **Close-to-Bond Trade** -- trades near bond price levels. Filter by probability range.
+
+Price Spike, Price Threshold, and Close-to-Bond also support **Tag** and **Series** filters (comma-separated lists) to scope alerts to markets carrying specific tags/categories or belonging to a series.
 
 ### Trader Monitoring
 
@@ -21,9 +26,10 @@ Use `/trader <wallet_address>` to watch any wallet:
 
 - **First Trade** -- first-ever transaction from the wallet.
 - **New Market Entry** -- wallet enters a market it hasn't traded before.
-- **Whale Trade** -- any trade by the wallet.
+- **All Trades** -- every fill-style trade by the wallet. Raise the min USD filter to get whale-sized trades only.
+- **Global PnL** -- the wallet's overall realized PnL crosses a threshold over a timeframe. Filter by min PnL, min volume, and timeframe.
 
-All trader alerts support min USD amount (minimum $10) and probability range filters.
+First Trade and All Trades support min USD amount (minimum $1) and probability range filters.
 
 ### How It Works
 
@@ -145,7 +151,7 @@ Telegram's command menu/autocomplete is synced when you run `npm run setup`, `np
 | `/list` | View your active monitors |
 | `/unsubscribe` | Remove monitors via inline buttons |
 | `/trader <address>` | Start monitoring a wallet |
-| `/example [1-7]` | Preview each alert format |
+| `/example [1-11]` | Preview each alert format |
 
 You can also send a **Polymarket URL** directly to start setting up a market monitor, or a **wallet address** (`0x...`) to start setting up a trader monitor.
 

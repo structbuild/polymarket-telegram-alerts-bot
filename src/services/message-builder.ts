@@ -1,11 +1,15 @@
 import type {
   ConditionMetricsPayload,
-  ProbabilitySpikePayload,
   PriceSpikePayload,
   CloseToBondPayload,
   FirstTradePayload,
   NewMarketPayload,
   WhaleTradePayload,
+  NewTradePayload,
+  GlobalPnlPayload,
+  MarketVolumeSpikePayload,
+  VolumeMilestonePayload,
+  WebhookSchemas,
   PolymarketWebhookEvent,
 } from "@structbuild/sdk";
 import {
@@ -24,14 +28,20 @@ const POLYMARKET_URL = "https://polymarket.com/event";
 const POLYGONSCAN_TX = "https://polygonscan.com/tx";
 const POLYGONSCAN_ADDR = "https://polygonscan.com/address";
 
+type PriceThresholdPayload = WebhookSchemas["PriceThresholdPayload"];
+
 type WebhookPayload =
   | ConditionMetricsPayload
-  | ProbabilitySpikePayload
   | PriceSpikePayload
+  | PriceThresholdPayload
   | CloseToBondPayload
   | FirstTradePayload
   | NewMarketPayload
-  | WhaleTradePayload;
+  | WhaleTradePayload
+  | NewTradePayload
+  | GlobalPnlPayload
+  | MarketVolumeSpikePayload
+  | VolumeMilestonePayload;
 
 export interface OutcomePrice {
   name: string;
@@ -80,32 +90,22 @@ function outcomePricesLine(outcomes?: OutcomePrice[]): string | null {
   return `📊 ${parts.join(" / ")}`;
 }
 
-type SpikePayload = ProbabilitySpikePayload | PriceSpikePayload;
-type TraderPayload = FirstTradePayload | NewMarketPayload | WhaleTradePayload;
-type SpikeEventKind = "probability_spike" | "price_spike";
+type SpikePayload = PriceSpikePayload;
+type TraderPayload = FirstTradePayload | NewMarketPayload | WhaleTradePayload | NewTradePayload;
 
 function formatSpikeLevelDisplay(value: number | null): string {
   if (value === null) return "—";
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function spikeLevels(kind: SpikeEventKind, payload: SpikePayload): { previous: number | null; current: number | null } {
-  if (kind === "probability_spike") {
-    const p = payload as ProbabilitySpikePayload;
-    return {
-      previous: toFiniteNumber(p.previous_probability),
-      current: toFiniteNumber(p.current_probability),
-    };
-  }
-  const p = payload as PriceSpikePayload;
+function spikeLevels(payload: SpikePayload): { previous: number | null; current: number | null } {
   return {
-    previous: toFiniteNumber(p.previous_price),
-    current: toFiniteNumber(p.current_price),
+    previous: toFiniteNumber(payload.previous_price),
+    current: toFiniteNumber(payload.current_price),
   };
 }
 
 function buildSpikeMessage(
-  kind: SpikeEventKind,
   title: string,
   payload: SpikePayload,
   market: MarketContext | null
@@ -118,7 +118,7 @@ function buildSpikeMessage(
     : "—";
   const question = market?.question ?? null;
   const eventSlug = payload.event_slug ?? market?.event_slug ?? null;
-  const { previous: previousValue, current: currentValue } = spikeLevels(kind, payload);
+  const { previous: previousValue, current: currentValue } = spikeLevels(payload);
   const rangeLine = `📊 ${code(formatSpikeLevelDisplay(previousValue))} → ${code(formatSpikeLevelDisplay(currentValue))} (${code(change)})`;
 
   const lines = [
@@ -175,6 +175,110 @@ function buildTraderMessage(emoji: string, title: string, payload: TraderPayload
   return lines.join("\n");
 }
 
+function buildPriceThresholdMessage(payload: PriceThresholdPayload, market: MarketContext | null): string {
+  const direction = String(payload.direction ?? "").toLowerCase();
+  const directionEmoji = direction === "down" ? "📉" : "📈";
+  const question = payload.question ?? market?.question ?? null;
+  const eventSlug = payload.event_slug ?? market?.event_slug ?? null;
+
+  const lines = [
+    `${directionEmoji} ${bold("Price Threshold Crossed")}`,
+  ];
+
+  if (question) {
+    lines.push("", marketLink(question, eventSlug));
+  }
+
+  lines.push(
+    "",
+    `🎯 Outcome: ${bold(escapeHtml(payload.outcome ?? ""))}`,
+    `📊 ${code(formatPercentage(payload.previous_price))} → ${code(formatPercentage(payload.price))}`,
+    `🚩 Threshold: ${code(formatPercentage(payload.threshold))}`,
+  );
+
+  lines.push("", linksSection(eventSlug, payload.hash, payload.trader));
+
+  return lines.join("\n");
+}
+
+function buildVolumeSpikeMessage(payload: MarketVolumeSpikePayload, market: MarketContext | null): string {
+  const question = payload.question ?? market?.question ?? null;
+  const eventSlug = payload.event_slug ?? market?.event_slug ?? null;
+
+  const lines = [
+    `📊 ${bold("Volume Spike")}`,
+  ];
+
+  if (question) {
+    lines.push("", marketLink(question, eventSlug));
+  }
+
+  lines.push(
+    "",
+    `⏱ Timeframe: ${code(payload.timeframe ?? "")}`,
+    `💵 Volume: ${code(formatUsd(payload.snapshot_volume_usd))} → ${code(formatUsd(payload.current_volume_usd))}`,
+  );
+
+  const spikePct = toFiniteNumber(payload.spike_pct);
+  if (spikePct !== null) lines.push(`🚀 Spike: ${code(`+${spikePct.toFixed(1)}%`)}`);
+  if (payload.txns != null) lines.push(`📈 Transactions: ${code(payload.txns.toLocaleString("en-US"))}`);
+  if (payload.fees != null && payload.fees > 0) lines.push(`💰 Fees: ${code(formatUsd(payload.fees))}`);
+
+  const linkLine = linksSection(eventSlug);
+  if (linkLine) lines.push("", linkLine);
+
+  return lines.join("\n");
+}
+
+function buildVolumeMilestoneMessage(payload: VolumeMilestonePayload, market: MarketContext | null): string {
+  const question = market?.question ?? null;
+  const eventSlug = market?.event_slug ?? null;
+
+  const lines = [
+    `🏆 ${bold("Volume Milestone")}`,
+  ];
+
+  if (question) {
+    lines.push("", marketLink(question, eventSlug));
+  }
+
+  lines.push(
+    "",
+    `🎯 Milestone: ${code(formatUsd(payload.milestone_usd))}`,
+    `💵 Volume: ${code(formatUsd(payload.current_volume_usd))}`,
+    `⏱ Timeframe: ${code(payload.timeframe ?? "")}`,
+  );
+
+  if (payload.txns != null) lines.push(`📈 Transactions: ${code(payload.txns.toLocaleString("en-US"))}`);
+
+  const linkLine = linksSection(eventSlug);
+  if (linkLine) lines.push("", linkLine);
+
+  return lines.join("\n");
+}
+
+function buildGlobalPnlMessage(payload: GlobalPnlPayload, _market: MarketContext | null): string {
+  const trader = payload.trader ?? "";
+  const realizedPnl = toFiniteNumber(payload.realized_pnl_usd);
+  const pnlEmoji = realizedPnl !== null && realizedPnl < 0 ? "🔻" : "🟢";
+
+  const lines = [
+    `${pnlEmoji} ${bold("Global PnL Update")}`,
+    "",
+    `👤 ${code(trader)}`,
+    `⏱ Timeframe: ${code(payload.timeframe ?? "")}`,
+    `💰 Realized PnL: ${code(formatUsd(realizedPnl ?? 0))}`,
+  ];
+
+  if (payload.total_volume_usd != null) lines.push(`💵 Volume: ${code(formatUsd(payload.total_volume_usd))}`);
+  if (payload.market_win_rate_pct != null) lines.push(`🎯 Win Rate: ${code(`${payload.market_win_rate_pct.toFixed(1)}%`)}`);
+  if (payload.markets_traded != null) lines.push(`📊 Markets: ${code(payload.markets_traded.toLocaleString("en-US"))}`);
+
+  lines.push("", linksSection(null, null, trader));
+
+  return lines.join("\n");
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, market: MarketContext | null) => string>> = {
   condition_metrics: (p: ConditionMetricsPayload, market: MarketContext | null) => {
@@ -208,11 +312,20 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
     return lines.join("\n");
   },
 
-  probability_spike: (p: ProbabilitySpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("probability_spike", "Probability Spike", p, market),
+  probability_spike: (p: PriceSpikePayload, market: MarketContext | null) =>
+    buildSpikeMessage("Probability Spike", p, market),
 
   price_spike: (p: PriceSpikePayload, market: MarketContext | null) =>
-    buildSpikeMessage("price_spike", "Price Spike", p, market),
+    buildSpikeMessage("Price Spike", p, market),
+
+  price_threshold: (p: PriceThresholdPayload, market: MarketContext | null) =>
+    buildPriceThresholdMessage(p, market),
+
+  market_volume_spike: (p: MarketVolumeSpikePayload, market: MarketContext | null) =>
+    buildVolumeSpikeMessage(p, market),
+
+  market_volume_milestone: (p: VolumeMilestonePayload, market: MarketContext | null) =>
+    buildVolumeMilestoneMessage(p, market),
 
   close_to_bond: (p: CloseToBondPayload, market: MarketContext | null) => {
     const sideEmoji = p.side.toLowerCase() === "buy" ? "🟢" : "🔴";
@@ -254,7 +367,13 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
     buildTraderMessage("🆕", "New Market Entry", p, market),
 
   trader_whale_trade: (p: WhaleTradePayload, market: MarketContext | null) =>
-    buildTraderMessage("💰", "New Trade", p, market),
+    buildTraderMessage("💰", "Whale Trade", p, market),
+
+  trader_new_trade: (p: NewTradePayload, market: MarketContext | null) =>
+    buildTraderMessage("🔔", "Trade", p, market),
+
+  trader_global_pnl: (p: GlobalPnlPayload, market: MarketContext | null) =>
+    buildGlobalPnlMessage(p, market),
 };
 
 interface ExamplePayload {
@@ -291,11 +410,11 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       condition_id: "0xabcdef1234567890abcdef1234567890abcdef12",
       event_slug: "will-bitcoin-hit-100k-2026",
       outcome: "Yes",
-      previous_probability: 0.64,
-      current_probability: 0.72,
+      previous_price: 0.64,
+      current_price: 0.72,
       spike_direction: "up",
       spike_pct: 12.5,
-    } satisfies ProbabilitySpikePayload,
+    } satisfies PriceSpikePayload,
     market: {
       question: "Will Bitcoin hit $100k in 2026?",
       event_slug: "will-bitcoin-hit-100k-2026",
@@ -325,6 +444,83 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       outcomes: [
         { name: "Yes", price: 0.45 },
         { name: "No", price: 0.55 },
+      ],
+    },
+  },
+  {
+    event: "price_threshold",
+    payload: {
+      trader: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      taker: "0x1234567890abcdef1234567890abcdef12345678",
+      position_id: "67890",
+      condition_id: "0xabcdef1234567890abcdef1234567890abcdef12",
+      outcome: "Yes",
+      question: "Will Bitcoin hit $100k in 2026?",
+      event_slug: "will-bitcoin-hit-100k-2026",
+      trade_id: "trade-100",
+      hash: "0xthreshold1",
+      block: 19500400,
+      confirmed_at: 1711932000,
+      amount_usd: 12000.0,
+      shares_amount: 13333.33,
+      fee: 60.0,
+      side: "Buy",
+      previous_price: 0.78,
+      price: 0.82,
+      direction: "up",
+      threshold: 0.8,
+    } satisfies PriceThresholdPayload,
+    market: {
+      question: "Will Bitcoin hit $100k in 2026?",
+      event_slug: "will-bitcoin-hit-100k-2026",
+      image_url: null,
+      outcomes: [
+        { name: "Yes", price: 0.82 },
+        { name: "No", price: 0.18 },
+      ],
+    },
+  },
+  {
+    event: "market_volume_spike",
+    payload: {
+      condition_id: "0xabcdef1234567890abcdef1234567890abcdef12",
+      question: "Will Bitcoin hit $100k in 2026?",
+      event_slug: "will-bitcoin-hit-100k-2026",
+      timeframe: "1h",
+      current_volume_usd: 480_000.0,
+      snapshot_volume_usd: 120_000.0,
+      delta_volume_usd: 360_000.0,
+      spike_pct: 300.0,
+      txns: 1842,
+      fees: 2400.0,
+    } satisfies MarketVolumeSpikePayload,
+    market: {
+      question: "Will Bitcoin hit $100k in 2026?",
+      event_slug: "will-bitcoin-hit-100k-2026",
+      image_url: null,
+      outcomes: [
+        { name: "Yes", price: 0.72 },
+        { name: "No", price: 0.28 },
+      ],
+    },
+  },
+  {
+    event: "market_volume_milestone",
+    payload: {
+      condition_id: "0xabcdef1234567890abcdef1234567890abcdef12",
+      timeframe: "24h",
+      milestone_usd: 1_000_000.0,
+      current_volume_usd: 1_024_500.0,
+      fees: 5122.5,
+      txns: 6231,
+    } satisfies VolumeMilestonePayload,
+    market: {
+      question: "Will Bitcoin hit $100k in 2026?",
+      event_slug: "will-bitcoin-hit-100k-2026",
+      image_url: null,
+      outcomes: [
+        { name: "Yes", price: 0.72 },
+        { name: "No", price: 0.28 },
       ],
     },
   },
@@ -379,8 +575,8 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       fee: 2.5,
       side: "Buy",
       price: 0.70,
-      exchange: "polymarket",
-      trade_type: "limit",
+      exchange: "CTFExchange",
+      trade_type: "OrderFilled",
     } satisfies FirstTradePayload,
     market: {
       question: "Will SpaceX launch Starship successfully in Q2 2026?",
@@ -411,8 +607,8 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
       fee: 12.5,
       side: "Sell",
       price: 0.50,
-      exchange: "polymarket",
-      trade_type: "market",
+      exchange: "CTFExchange",
+      trade_type: "OrdersMatched",
     } satisfies NewMarketPayload,
     market: {
       question: "Will the Fed cut rates in June 2026?",
@@ -425,35 +621,54 @@ export const EXAMPLE_PAYLOADS: ExamplePayload[] = [
     },
   },
   {
-    event: "trader_whale_trade",
+    event: "trader_new_trade",
     payload: {
-      trader: "0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8",
-      taker: "0xabcdef1234567890abcdef1234567890abcdef12",
-      position_id: "44444",
+      trader: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      taker: "0x1234567890abcdef1234567890abcdef12345678",
+      position_id: "55555",
       condition_id: "0xdeadbeef",
-      outcome: "Yes",
-      question: "Will Bitcoin hit $150k in 2026?",
-      event_slug: "bitcoin-150k-2026",
-      trade_id: "trade-004",
-      hash: "0xaabbcc",
-      block: 19500300,
-      confirmed_at: 1711931000,
-      amount_usd: 250_000.0,
-      shares_amount: 312_500.0,
-      fee: 1250.0,
-      side: "Buy",
-      price: 0.80,
-      exchange: "polymarket",
-      trade_type: "limit",
-    } satisfies WhaleTradePayload,
+      outcome: "No",
+      question: "Will the Fed cut rates in June 2026?",
+      event_slug: "fed-rate-cut-june-2026",
+      trade_id: "trade-005",
+      hash: "0xnewtrade1",
+      block: 19500500,
+      confirmed_at: 1711931500,
+      amount_usd: 1500.0,
+      shares_amount: 3000.0,
+      fee: 7.5,
+      side: "Sell",
+      price: 0.50,
+      exchange: "CTFExchange",
+      trade_type: "OrderFilled",
+    } satisfies NewTradePayload,
     market: {
-      question: "Will Bitcoin hit $150k in 2026?",
-      event_slug: "bitcoin-150k-2026",
+      question: "Will the Fed cut rates in June 2026?",
+      event_slug: "fed-rate-cut-june-2026",
       image_url: null,
       outcomes: [
-        { name: "Yes", price: 0.80 },
-        { name: "No", price: 0.20 },
+        { name: "Yes", price: 0.50 },
+        { name: "No", price: 0.50 },
       ],
+    },
+  },
+  {
+    event: "trader_global_pnl",
+    payload: {
+      trader: "0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8",
+      timeframe: "7d",
+      realized_pnl_usd: 48_250.75,
+      total_volume_usd: 1_250_000.0,
+      markets_traded: 87,
+      markets_won: 61,
+      markets_lost: 26,
+      market_win_rate_pct: 70.1,
+    } satisfies GlobalPnlPayload,
+    market: {
+      question: "",
+      event_slug: "",
+      image_url: null,
+      outcomes: [],
     },
   },
 ];

@@ -1,12 +1,16 @@
 import { Bot } from "grammy";
 import type {
   ConditionMetricsPayload,
-  ProbabilitySpikePayload,
   PriceSpikePayload,
   CloseToBondPayload,
   FirstTradePayload,
   NewMarketPayload,
   WhaleTradePayload,
+  NewTradePayload,
+  GlobalPnlPayload,
+  MarketVolumeSpikePayload,
+  VolumeMilestonePayload,
+  WebhookSchemas,
   PolymarketWebhookEvent,
 } from "@structbuild/sdk";
 import { verifyWebhookSignature } from "../utils/hmac";
@@ -22,14 +26,20 @@ import { matchesExcludeShortTerm } from "./filter-matchers";
 import type { Env } from "../env";
 import { parseStoredFilters, toFiniteNumber } from "../services/monitor-filters";
 
+type PriceThresholdPayload = WebhookSchemas["PriceThresholdPayload"];
+
 type WebhookPayload =
   | ConditionMetricsPayload
-  | ProbabilitySpikePayload
   | PriceSpikePayload
+  | PriceThresholdPayload
   | CloseToBondPayload
   | FirstTradePayload
   | NewMarketPayload
-  | WhaleTradePayload;
+  | WhaleTradePayload
+  | NewTradePayload
+  | GlobalPnlPayload
+  | MarketVolumeSpikePayload
+  | VolumeMilestonePayload;
 
 function jsonResponse(status: number, body?: string): Response {
   return new Response(body ?? null, { status });
@@ -47,11 +57,16 @@ const TRADER_EVENTS: PolymarketWebhookEvent[] = [
   "trader_first_trade",
   "trader_new_market",
   "trader_whale_trade",
+  "trader_new_trade",
+  "trader_global_pnl",
 ];
 const SUPPORTED_EVENTS = new Set<PolymarketWebhookEvent>([
   "condition_metrics",
   "probability_spike",
   "price_spike",
+  "price_threshold",
+  "market_volume_spike",
+  "market_volume_milestone",
   "close_to_bond",
   ...TRADER_EVENTS,
 ]);
@@ -175,13 +190,29 @@ function matchesMonitorFilters(
         (expectedDirection === null || expectedDirection === "both" || (direction !== null && direction === expectedDirection))
       );
     }
+    case "price_threshold": {
+      const price = getTradeProbability(payload);
+      return matchesMin(filters.min_price, price) && matchesMax(filters.max_price, price);
+    }
+    case "market_volume_spike": {
+      const timeframe = getString(payload, "timeframe");
+      const snapshot = toFiniteNumber(payload.snapshot_volume_usd);
+      const current = toFiniteNumber(payload.current_volume_usd);
+      const ratio = snapshot !== null && snapshot > 0 && current !== null ? current / snapshot : null;
+      return matchesStringList(filters.timeframes, timeframe) && matchesMin(filters.spike_ratio, ratio);
+    }
+    case "market_volume_milestone": {
+      const timeframe = getString(payload, "timeframe");
+      return matchesStringList(filters.timeframes, timeframe);
+    }
     case "close_to_bond": {
       const probability = getTradeProbability(payload);
       return matchesMin(filters.min_probability, probability) && matchesMax(filters.max_probability, probability);
     }
     case "trader_first_trade":
     case "trader_new_market":
-    case "trader_whale_trade": {
+    case "trader_whale_trade":
+    case "trader_new_trade": {
       const trader = getString(payload, "trader");
       const amountUsd = toFiniteNumber(payload.amount_usd);
       const probability = getTradeProbability(payload);
@@ -190,6 +221,18 @@ function matchesMonitorFilters(
         matchesMin(filters.min_usd_value, amountUsd) &&
         matchesMin(filters.min_probability, probability) &&
         matchesMax(filters.max_probability, probability)
+      );
+    }
+    case "trader_global_pnl": {
+      const trader = getString(payload, "trader");
+      const timeframe = getString(payload, "timeframe");
+      const realizedPnl = toFiniteNumber(payload.realized_pnl_usd);
+      const volumeUsd = toFiniteNumber(payload.total_volume_usd);
+      return (
+        matchesStringList(filters.traders, trader, (value) => value.toLowerCase()) &&
+        matchesStringList(filters.timeframes, timeframe) &&
+        matchesMin(filters.min_realized_pnl_usd, realizedPnl) &&
+        matchesMin(filters.min_volume_usd, volumeUsd)
       );
     }
   }

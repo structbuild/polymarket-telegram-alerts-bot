@@ -102,6 +102,39 @@ test("exclude_shortterm broad webhook can serve stricter monitor, but not the in
   );
 });
 
+test("normalizes trader_global_pnl traders to lowercase exact-match list", () => {
+  const filters = normalizeStructWebhookFilters("trader_global_pnl", {
+    traders: ["0xABCdef"],
+    min_realized_pnl_usd: 1000,
+  });
+
+  assert.deepEqual(filters, {
+    traders: ["0xabcdef"],
+    min_realized_pnl_usd: 1000,
+  });
+});
+
+test("reuses lower spike_ratio volume-spike webhook for a stricter monitor", () => {
+  const score = getStructWebhookReuseScore(
+    "market_volume_spike",
+    { condition_ids: ["0xabc"], spike_ratio: 2 },
+    { condition_ids: ["0xabc"], spike_ratio: 3 }
+  );
+
+  assert.equal(typeof score, "number");
+  assert.ok(score > 0);
+});
+
+test("does not reuse webhooks with different tag filters", () => {
+  const score = getStructWebhookReuseScore(
+    "price_spike",
+    { condition_ids: ["0xabc"], tags: ["crypto"] },
+    { condition_ids: ["0xabc"], tags: ["politics"] }
+  );
+
+  assert.equal(score, null);
+});
+
 test("exact filter matches are treated as equal after normalization", () => {
   assert.equal(
     areStructWebhookFiltersEqual(

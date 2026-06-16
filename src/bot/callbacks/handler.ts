@@ -64,6 +64,7 @@ import {
   buildFilterText,
   getEventTypeLabel,
   requiresMinUsd,
+  traderScopeFilterKey,
 } from "../utils/monitor-draft";
 import { upsertUser } from "../../db/users";
 import {
@@ -311,7 +312,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
             filterPatch.min_probability = null;
             filterPatch.max_probability = null;
           } else if (requiresMinUsd(eventType) && existingFilters.min_usd_value === undefined) {
-            filterPatch.min_usd_value = 10;
+            filterPatch.min_usd_value = 1;
           }
         }
 
@@ -335,12 +336,31 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           if (existingFilters.spike_direction === undefined) {
             filterPatch.spike_direction = "both";
           }
+        } else if (eventType === "price_threshold") {
+          if (existingFilters.min_price === undefined && existingFilters.max_price === undefined) {
+            filterPatch.min_price = 0.9;
+          }
         } else if (eventType === "condition_metrics") {
           if (existingFilters.min_volume_usd === undefined) {
             filterPatch.min_volume_usd = 10_000;
           }
           if (existingFilters.timeframes === undefined) {
             filterPatch.timeframes = ["5m"];
+          }
+        } else if (eventType === "market_volume_spike") {
+          if (existingFilters.spike_ratio === undefined) {
+            filterPatch.spike_ratio = 2;
+          }
+          if (existingFilters.timeframes === undefined) {
+            filterPatch.timeframes = ["1h"];
+          }
+        } else if (eventType === "market_volume_milestone") {
+          if (existingFilters.timeframes === undefined) {
+            filterPatch.timeframes = ["24h"];
+          }
+        } else if (eventType === "trader_global_pnl") {
+          if (existingFilters.timeframes === undefined) {
+            filterPatch.timeframes = ["7d"];
           }
         } else if (eventType === "close_to_bond") {
           if (existingFilters.min_probability === undefined) {
@@ -378,10 +398,13 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           return;
         }
 
-        if (config.type === "number") {
+        if (config.type === "number" || config.type === "list") {
           await updateDraftAwaitingInput(env.DB, telegramId, filterName);
           await ctx.answerCallbackQuery();
-          const promptMsg = await ctx.reply(`Enter value for ${config.label}:`);
+          const prompt = config.type === "list"
+            ? `Enter ${config.label} as a comma-separated list (e.g. crypto, politics):`
+            : `Enter value for ${config.label}:`;
+          const promptMsg = await ctx.reply(prompt);
           await updateDraftFilter(env.DB, telegramId, "_prompt_message_id", promptMsg.message_id);
           return;
         }
@@ -675,10 +698,27 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           }
         }
 
+        if (eventType === "price_threshold") {
+          const minPrice = toFiniteNumber(fullFilters.min_price);
+          const maxPrice = toFiniteNumber(fullFilters.max_price);
+          if (minPrice === null && maxPrice === null) {
+            await ctx.answerCallbackQuery("Price Threshold needs a min or max price before it can be created.");
+            return;
+          }
+        }
+
+        if (eventType === "market_volume_spike" || eventType === "market_volume_milestone") {
+          const timeframes = Array.isArray(fullFilters.timeframes) ? fullFilters.timeframes : [];
+          if (timeframes.length === 0) {
+            await ctx.answerCallbackQuery("Select at least one timeframe before creating this monitor.");
+            return;
+          }
+        }
+
         if (draft.draft_type === "trader" && requiresMinUsd(eventType)) {
           const minUsd = toFiniteNumber(fullFilters.min_usd_value);
-          if (minUsd === null || minUsd < 10) {
-            await ctx.answerCallbackQuery("Min USD is required (minimum $10). Tap the Min USD button to set it.");
+          if (minUsd === null || minUsd < 1) {
+            await ctx.answerCallbackQuery("Min USD is required (minimum $1). Tap the Min USD button to set it.");
             return;
           }
         }
@@ -781,7 +821,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
             return;
           }
 
-          fullFilters.wallet_addresses = [draft.wallet_address];
+          fullFilters[traderScopeFilterKey(eventType)] = [draft.wallet_address];
           const structFilters = normalizeStructWebhookFilters(eventType, fullFilters);
           const addr = draft.wallet_address ?? "";
           const description = `${getEventTypeLabel(draft.event_type)} — trader ${addr}`;
