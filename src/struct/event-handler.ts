@@ -316,6 +316,7 @@ async function enrichWithMarketData(
     return {
       question: market.question,
       event_slug: market.event_slug,
+      market_slug: market.market_slug,
       image_url: market.image_url,
       outcomes: market.outcomes?.map((o) => ({ name: o.name, price: o.price })) ?? [],
     };
@@ -377,7 +378,7 @@ export async function handleStructWebhook(
       (subscribers) => {
         if (subscribers.length === 0) return;
         const bot = createBot(env);
-        return notifySubscribers(bot, subscribers, result.text, result.imageUrl);
+        return notifySubscribers(bot, subscribers, result.text, result.imageUrl, result.keyboard);
       }
     ).catch((err) => {
       console.error("Webhook processing error:", err);

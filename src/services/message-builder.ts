@@ -23,10 +23,13 @@ import {
   link,
 } from "../utils/formatting";
 import { toFiniteNumber } from "./monitor-filters";
+import { InlineKeyboard } from "grammy";
 
 const POLYMARKET_URL = "https://polymarket.com/event";
 const POLYGONSCAN_TX = "https://polygonscan.com/tx";
 const POLYGONSCAN_ADDR = "https://polygonscan.com/address";
+const STRUCT_EXPLORER = "https://explorer.struct.to";
+const SCANNER_BOT = "StructScannerBot";
 
 type PriceThresholdPayload = WebhookSchemas["PriceThresholdPayload"];
 
@@ -51,13 +54,42 @@ export interface OutcomePrice {
 export interface MarketContext {
   question?: string | null;
   event_slug?: string | null;
+  market_slug?: string | null;
   image_url?: string | null;
   outcomes?: OutcomePrice[];
+}
+
+function marketSlugFor(
+  payload: unknown,
+  market: MarketContext | null
+): string | null {
+  const slug = (payload as { market_slug?: unknown }).market_slug;
+  return (typeof slug === "string" && slug.length > 0 ? slug : null) ?? market?.market_slug ?? null;
 }
 
 export interface FormattedMessage {
   text: string;
   imageUrl: string | null;
+  keyboard?: InlineKeyboard;
+}
+
+function buildAnalyzeKeyboard(payload: Record<string, unknown>): InlineKeyboard | undefined {
+  const conditionId = typeof payload.condition_id === "string" ? payload.condition_id : null;
+  const trader = typeof payload.trader === "string" ? payload.trader : null;
+
+  const keyboard = new InlineKeyboard();
+  let hasButton = false;
+
+  if (conditionId) {
+    keyboard.url("🔍 Analyze Market", `https://t.me/${SCANNER_BOT}?start=${conditionId.replace(/^0x/, "")}`);
+    hasButton = true;
+  }
+  if (trader) {
+    keyboard.url("👤 Analyze Trader", `https://t.me/${SCANNER_BOT}?start=${trader.replace(/^0x/, "")}`);
+    hasButton = true;
+  }
+
+  return hasButton ? keyboard : undefined;
 }
 
 function marketLink(
@@ -68,12 +100,19 @@ function marketLink(
   return link(escapeHtml(title), `${POLYMARKET_URL}/${eventSlug}`);
 }
 
-function linksSection(
-  eventSlug?: string | null,
-  hash?: string | null,
-  trader?: string | null
-): string {
+function linksSection(opts: {
+  marketSlug?: string | null;
+  eventSlug?: string | null;
+  hash?: string | null;
+  trader?: string | null;
+}): string {
+  const { marketSlug, eventSlug, hash, trader } = opts;
   const parts: string[] = [];
+  if (marketSlug) {
+    parts.push(link("Struct", `${STRUCT_EXPLORER}/markets/${marketSlug}`));
+  } else if (trader) {
+    parts.push(link("Struct", `${STRUCT_EXPLORER}/traders/${trader}`));
+  }
   if (eventSlug) parts.push(link("Polymarket", `${POLYMARKET_URL}/${eventSlug}`));
   if (hash) parts.push(link("TX Hash", `${POLYGONSCAN_TX}/${hash}`));
   if (trader) parts.push(link("Wallet", `${POLYGONSCAN_ADDR}/${trader}`));
@@ -135,7 +174,7 @@ function buildSpikeMessage(
     rangeLine,
   );
 
-  const linkLine = linksSection(eventSlug);
+  const linkLine = linksSection({ marketSlug: marketSlugFor(payload, market), eventSlug });
   if (linkLine) lines.push("", linkLine);
 
   return lines.join("\n");
@@ -170,7 +209,7 @@ function buildTraderMessage(emoji: string, title: string, payload: TraderPayload
     lines.push(`📦 Shares: ${code(formatShares(payload.shares_amount))}`);
   }
 
-  lines.push("", linksSection(eventSlug, payload.hash, payload.trader));
+  lines.push("", linksSection({ marketSlug: marketSlugFor(payload, market), eventSlug, hash: payload.hash, trader: payload.trader }));
 
   return lines.join("\n");
 }
@@ -196,7 +235,7 @@ function buildPriceThresholdMessage(payload: PriceThresholdPayload, market: Mark
     `🚩 Threshold: ${code(formatPercentage(payload.threshold))}`,
   );
 
-  lines.push("", linksSection(eventSlug, payload.hash, payload.trader));
+  lines.push("", linksSection({ marketSlug: marketSlugFor(payload, market), eventSlug, hash: payload.hash, trader: payload.trader }));
 
   return lines.join("\n");
 }
@@ -224,7 +263,7 @@ function buildVolumeSpikeMessage(payload: MarketVolumeSpikePayload, market: Mark
   if (payload.txns != null) lines.push(`📈 Transactions: ${code(payload.txns.toLocaleString("en-US"))}`);
   if (payload.fees != null && payload.fees > 0) lines.push(`💰 Fees: ${code(formatUsd(payload.fees))}`);
 
-  const linkLine = linksSection(eventSlug);
+  const linkLine = linksSection({ marketSlug: marketSlugFor(payload, market), eventSlug });
   if (linkLine) lines.push("", linkLine);
 
   return lines.join("\n");
@@ -251,7 +290,7 @@ function buildVolumeMilestoneMessage(payload: VolumeMilestonePayload, market: Ma
 
   if (payload.txns != null) lines.push(`📈 Transactions: ${code(payload.txns.toLocaleString("en-US"))}`);
 
-  const linkLine = linksSection(eventSlug);
+  const linkLine = linksSection({ marketSlug: marketSlugFor(payload, market), eventSlug });
   if (linkLine) lines.push("", linkLine);
 
   return lines.join("\n");
@@ -274,7 +313,7 @@ function buildGlobalPnlMessage(payload: GlobalPnlPayload, _market: MarketContext
   if (payload.market_win_rate_pct != null) lines.push(`🎯 Win Rate: ${code(`${payload.market_win_rate_pct.toFixed(1)}%`)}`);
   if (payload.markets_traded != null) lines.push(`📊 Markets: ${code(payload.markets_traded.toLocaleString("en-US"))}`);
 
-  lines.push("", linksSection(null, null, trader));
+  lines.push("", linksSection({ trader }));
 
   return lines.join("\n");
 }
@@ -306,7 +345,7 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
     if (p.unique_traders != null) lines.push(`👥 Unique Traders: ${code(p.unique_traders.toLocaleString("en-US"))}`);
     if (p.fees != null && p.fees > 0) lines.push(`💰 Fees: ${code(formatUsd(p.fees))}`);
 
-    const linkLine = linksSection(eventSlug);
+    const linkLine = linksSection({ marketSlug: marketSlugFor(p, market), eventSlug });
     if (linkLine) lines.push("", linkLine);
 
     return lines.join("\n");
@@ -355,7 +394,7 @@ const MESSAGE_CONFIGS: Partial<Record<PolymarketWebhookEvent, (payload: any, mar
       lines.push(`📦 Shares: ${code(formatShares(p.shares_amount))}`);
     }
 
-    lines.push("", linksSection(eventSlug, p.hash, p.trader));
+    lines.push("", linksSection({ marketSlug: marketSlugFor(p, market), eventSlug, hash: p.hash, trader: p.trader }));
 
     return lines.join("\n");
   },
@@ -683,5 +722,6 @@ export function formatMessage(
   return {
     text: formatter(payload, market ?? null),
     imageUrl: market?.image_url ?? null,
+    keyboard: buildAnalyzeKeyboard(payload as Record<string, unknown>),
   };
 }

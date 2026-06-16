@@ -44,6 +44,8 @@ Pick **Price Spike**, **Price Threshold**, or **Close-to-Bond** as the event typ
 
 The bot uses an interactive conversation flow -- after you send a market URL, wallet address, or a `/tag`/`/series` command, it presents inline keyboards to pick an event type, configure optional filters, and confirm. Each monitor registers a webhook through the Struct API, with alerts delivered to your Telegram chat in real time.
 
+Every alert links out to the [Struct Explorer](https://explorer.struct.to) (market or trader page) first, then Polymarket (plus Polygonscan TX/wallet links for trades), and includes **Analyze Market / Analyze Trader** buttons that deep-link into the [Struct Scanner bot](https://t.me/StructScannerBot) for a full breakdown.
+
 ## Tech Stack
 
 - **Cloudflare Workers** -- serverless runtime
