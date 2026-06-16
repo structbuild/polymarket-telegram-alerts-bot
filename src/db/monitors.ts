@@ -1,4 +1,4 @@
-import type { DbMarketMonitor, DbTraderMonitor } from "../types/database";
+import type { DbMarketMonitor, DbTraderMonitor, DbTagMonitor } from "../types/database";
 
 function parseCount(value: unknown): number {
   if (typeof value === "number") {
@@ -60,6 +60,11 @@ export async function removeAllMonitors(
     db
       .prepare(
         "DELETE FROM trader_monitors WHERE telegram_id = ?"
+      )
+      .bind(telegramId),
+    db
+      .prepare(
+        "DELETE FROM tag_monitors WHERE telegram_id = ?"
       )
       .bind(telegramId),
   ]);
@@ -248,6 +253,107 @@ export async function getTraderMonitorsByWebhookAndEvent(
   return result.results;
 }
 
+export async function addTagMonitor(
+  db: D1Database,
+  telegramId: number,
+  scopeType: string,
+  scopeValue: string,
+  eventType: string,
+  structWebhookId: string,
+  filters: Record<string, unknown>
+): Promise<DbTagMonitor | null> {
+  await db
+    .prepare(
+      "INSERT INTO tag_monitors (telegram_id, scope_type, scope_value, event_type, struct_webhook_id, filters, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now')) ON CONFLICT(telegram_id, scope_type, scope_value, event_type) DO UPDATE SET struct_webhook_id = excluded.struct_webhook_id, filters = excluded.filters, is_active = 1, created_at = datetime('now')"
+    )
+    .bind(telegramId, scopeType, scopeValue.toLowerCase(), eventType, structWebhookId, JSON.stringify(filters))
+    .run();
+
+  return db
+    .prepare(
+      "SELECT * FROM tag_monitors WHERE telegram_id = ? AND scope_type = ? AND scope_value = ? AND event_type = ? AND is_active = 1"
+    )
+    .bind(telegramId, scopeType, scopeValue.toLowerCase(), eventType)
+    .first<DbTagMonitor>();
+}
+
+export async function removeTagMonitor(
+  db: D1Database,
+  monitorId: number
+): Promise<void> {
+  await db
+    .prepare("DELETE FROM tag_monitors WHERE id = ?")
+    .bind(monitorId)
+    .run();
+}
+
+export async function getTagMonitorsByUser(
+  db: D1Database,
+  telegramId: number
+): Promise<DbTagMonitor[]> {
+  const result = await db
+    .prepare(
+      "SELECT * FROM tag_monitors WHERE telegram_id = ? AND is_active = 1"
+    )
+    .bind(telegramId)
+    .all<DbTagMonitor>();
+  return result.results;
+}
+
+export async function getTagMonitorByUserScopeAndEvent(
+  db: D1Database,
+  telegramId: number,
+  scopeType: string,
+  scopeValue: string,
+  eventType: string
+): Promise<DbTagMonitor | null> {
+  return db
+    .prepare(
+      "SELECT * FROM tag_monitors WHERE telegram_id = ? AND scope_type = ? AND scope_value = ? AND event_type = ? AND is_active = 1"
+    )
+    .bind(telegramId, scopeType, scopeValue.toLowerCase(), eventType)
+    .first<DbTagMonitor>();
+}
+
+export async function getTagMonitorsByScopeAndEvent(
+  db: D1Database,
+  scopeType: string,
+  scopeValue: string,
+  eventType: string
+): Promise<DbTagMonitor[]> {
+  const result = await db
+    .prepare(
+      "SELECT * FROM tag_monitors WHERE scope_type = ? AND scope_value = ? AND event_type = ? AND is_active = 1"
+    )
+    .bind(scopeType, scopeValue.toLowerCase(), eventType)
+    .all<DbTagMonitor>();
+  return result.results;
+}
+
+export async function getTagMonitorsByWebhookAndEvent(
+  db: D1Database,
+  webhookId: string,
+  eventType: string
+): Promise<DbTagMonitor[]> {
+  const result = await db
+    .prepare(
+      "SELECT * FROM tag_monitors WHERE struct_webhook_id = ? AND event_type = ? AND is_active = 1"
+    )
+    .bind(webhookId, eventType)
+    .all<DbTagMonitor>();
+  return result.results;
+}
+
+export async function getTagMonitor(
+  db: D1Database,
+  monitorId: number
+): Promise<DbTagMonitor | null> {
+  return db
+    .prepare("SELECT * FROM tag_monitors WHERE id = ?")
+    .bind(monitorId)
+    .first<DbTagMonitor>();
+}
+
 export async function getMarketMonitor(
   db: D1Database,
   monitorId: number
@@ -294,52 +400,60 @@ export async function getAllMonitorWebhookIds(
   db: D1Database,
   telegramId: number
 ): Promise<string[]> {
-  const [markets, traders] = await Promise.all([
+  const [markets, traders, tags] = await Promise.all([
     db.prepare("SELECT struct_webhook_id FROM market_monitors WHERE telegram_id = ? AND is_active = 1 AND struct_webhook_id IS NOT NULL")
       .bind(telegramId).all<{ struct_webhook_id: string }>(),
     db.prepare("SELECT struct_webhook_id FROM trader_monitors WHERE telegram_id = ? AND is_active = 1 AND struct_webhook_id IS NOT NULL")
       .bind(telegramId).all<{ struct_webhook_id: string }>(),
+    db.prepare("SELECT struct_webhook_id FROM tag_monitors WHERE telegram_id = ? AND is_active = 1 AND struct_webhook_id IS NOT NULL")
+      .bind(telegramId).all<{ struct_webhook_id: string }>(),
   ]);
-  return [...markets.results.map(r => r.struct_webhook_id), ...traders.results.map(r => r.struct_webhook_id)];
+  return [...markets.results.map(r => r.struct_webhook_id), ...traders.results.map(r => r.struct_webhook_id), ...tags.results.map(r => r.struct_webhook_id)];
 }
 
 export async function getKnownMonitorWebhookIds(
   db: D1Database,
   telegramId: number
 ): Promise<string[]> {
-  const [markets, traders] = await Promise.all([
+  const [markets, traders, tags] = await Promise.all([
     db.prepare("SELECT struct_webhook_id FROM market_monitors WHERE telegram_id = ? AND struct_webhook_id IS NOT NULL")
       .bind(telegramId).all<{ struct_webhook_id: string }>(),
     db.prepare("SELECT struct_webhook_id FROM trader_monitors WHERE telegram_id = ? AND struct_webhook_id IS NOT NULL")
       .bind(telegramId).all<{ struct_webhook_id: string }>(),
+    db.prepare("SELECT struct_webhook_id FROM tag_monitors WHERE telegram_id = ? AND struct_webhook_id IS NOT NULL")
+      .bind(telegramId).all<{ struct_webhook_id: string }>(),
   ]);
-  return [...markets.results.map((row) => row.struct_webhook_id), ...traders.results.map((row) => row.struct_webhook_id)];
+  return [...markets.results.map((row) => row.struct_webhook_id), ...traders.results.map((row) => row.struct_webhook_id), ...tags.results.map((row) => row.struct_webhook_id)];
 }
 
 export async function countActiveMonitorsByUser(
   db: D1Database,
   telegramId: number
 ): Promise<number> {
-  const [markets, traders] = await Promise.all([
+  const [markets, traders, tags] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS count FROM market_monitors WHERE telegram_id = ? AND is_active = 1")
       .bind(telegramId).first<{ count: number | string }>(),
     db.prepare("SELECT COUNT(*) AS count FROM trader_monitors WHERE telegram_id = ? AND is_active = 1")
       .bind(telegramId).first<{ count: number | string }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM tag_monitors WHERE telegram_id = ? AND is_active = 1")
+      .bind(telegramId).first<{ count: number | string }>(),
   ]);
 
-  return parseCount(markets?.count) + parseCount(traders?.count);
+  return parseCount(markets?.count) + parseCount(traders?.count) + parseCount(tags?.count);
 }
 
 export async function countActiveMonitorWebhookReferences(
   db: D1Database,
   webhookId: string
 ): Promise<number> {
-  const [markets, traders] = await Promise.all([
+  const [markets, traders, tags] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS count FROM market_monitors WHERE struct_webhook_id = ? AND is_active = 1")
       .bind(webhookId).first<{ count: number | string }>(),
     db.prepare("SELECT COUNT(*) AS count FROM trader_monitors WHERE struct_webhook_id = ? AND is_active = 1")
       .bind(webhookId).first<{ count: number | string }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM tag_monitors WHERE struct_webhook_id = ? AND is_active = 1")
+      .bind(webhookId).first<{ count: number | string }>(),
   ]);
 
-  return parseCount(markets?.count) + parseCount(traders?.count);
+  return parseCount(markets?.count) + parseCount(traders?.count) + parseCount(tags?.count);
 }

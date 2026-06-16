@@ -26,6 +26,10 @@ export function traderScopeFilterKey(eventType: string | null): "traders" | "wal
   return eventType === "trader_global_pnl" ? "traders" : "wallet_addresses";
 }
 
+export function tagScopeFilterKey(draftType: string | null): "tags" | "series_slugs" {
+  return draftType === "series" ? "series_slugs" : "tags";
+}
+
 export function buildFilterText(
   draft: Pick<DbMonitorDraft, "draft_type" | "event_type" | "market_title" | "wallet_address">
 ): string {
@@ -37,6 +41,12 @@ export function buildFilterText(
       return `${bold(label)} for trader ${code(address)}\n\nMin USD is required (minimum $1). Configure filters, then tap Create Monitor:`;
     }
     return `${bold(label)} for trader ${code(address)}\n\nConfigure filters (optional), then tap Create Monitor:`;
+  }
+
+  if (draft.draft_type === "tag" || draft.draft_type === "series") {
+    const scopeKind = draft.draft_type === "series" ? "series" : "tag";
+    const value = draft.market_title ?? "";
+    return `${bold(label)} for ${scopeKind} ${code(escapeHtml(value))}\n\nConfigure filters (optional), then tap Create Monitor:`;
   }
 
   const title = draft.market_title ?? "Unknown Market";

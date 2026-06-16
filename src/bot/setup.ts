@@ -4,6 +4,7 @@ import { createMainMenu } from "./menus/main";
 import { registerStart } from "./commands/start";
 import { registerHelp } from "./commands/help";
 import { registerTrader } from "./commands/trader";
+import { registerTag } from "./commands/tag";
 import { registerUnsubscribe } from "./commands/unsubscribe";
 import { registerList } from "./commands/list";
 import { registerExample } from "./commands/example";
@@ -25,6 +26,7 @@ export function createBot(env: Env): Bot {
   registerStart(bot, env, mainMenu);
   registerHelp(bot, env, mainMenu);
   registerTrader(bot, env);
+  registerTag(bot, env);
   registerUnsubscribe(bot, env);
   registerList(bot, env);
   registerExample(bot);

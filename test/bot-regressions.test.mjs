@@ -4,6 +4,7 @@ import { isActiveDraftCallbackMessage } from "../.test-dist/src/bot/utils/draft-
 import {
   buildMarketOnboardingText,
   buildTraderOnboardingText,
+  buildTagOnboardingText,
   getStartReplyKind,
   resolveStartRoute,
 } from "../.test-dist/src/bot/utils/onboarding.js";
@@ -42,10 +43,13 @@ test("exclude_shortterm_markets still rejects updown slugs and allows normal slu
 test("/start deep links route to the correct onboarding prompt", () => {
   assert.equal(resolveStartRoute(" Market "), "market");
   assert.equal(resolveStartRoute("TRADER"), "trader");
+  assert.equal(resolveStartRoute("Tag"), "tag");
   assert.equal(getStartReplyKind("market"), "market");
   assert.equal(getStartReplyKind("trader"), "trader");
+  assert.equal(getStartReplyKind("tag"), "tag");
   assert.match(buildMarketOnboardingText(), /^<b>🏪 Market<\/b>/);
   assert.match(buildTraderOnboardingText(), /^<b>👤 Trader<\/b>/);
+  assert.match(buildTagOnboardingText(), /^<b>🏷 Tags & Series<\/b>/);
 });
 
 test("/start falls back to the welcome message for empty or unknown payloads", () => {
@@ -88,6 +92,17 @@ test("monitor removal callbacks support legacy delete and new selection formats"
     kind: "trader",
     page: 0,
   });
+  assert.deepEqual(parseMonitorRemovalCallbackData("ug:5:7"), {
+    id: 7,
+    kind: "tag",
+    page: 5,
+  });
+  assert.deepEqual(parseMonitorSelectionCallbackData("urg:1:8"), {
+    id: 8,
+    kind: "tag",
+    page: 1,
+  });
+  assert.equal(buildMonitorKey("tag", 8), "tag:8");
   assert.equal(parseMonitorSelectionCallbackData("ut:91"), null);
 });
 

@@ -1,6 +1,6 @@
 export const MONITOR_PAGE_SIZE = 8;
 
-type MonitorKind = "market" | "trader";
+type MonitorKind = "market" | "trader" | "tag";
 
 export interface MonitorRemovalCallback {
   id: number;
@@ -58,6 +58,8 @@ export function parseMonitorRemovalCallbackData(
     kind = "market";
   } else if (data.startsWith("ut:")) {
     kind = "trader";
+  } else if (data.startsWith("ug:")) {
+    kind = "tag";
   }
 
   if (!kind) {
@@ -96,6 +98,8 @@ export function parseMonitorSelectionCallbackData(
     kind = "market";
   } else if (data.startsWith("urt:")) {
     kind = "trader";
+  } else if (data.startsWith("urg:")) {
+    kind = "tag";
   }
 
   if (!kind) {

@@ -5,7 +5,7 @@ import { createStructClient } from "../../struct/client";
 import { lookupByConditionId, lookupByEventSlug, lookupByMarketSlug } from "../../services/market-lookup";
 import { getDraft, upsertMarketDraft, updateDraftAwaitingInput, updateDraftFilter, updateDraftMessageId } from "../../db/drafts";
 import { bold, escapeHtml } from "../../utils/formatting";
-import { buildEventTypeKeyboard, buildFilterKeyboard, buildEventMarketSelectKeyboard, MARKET_EVENT_TYPES, FILTER_CONFIGS } from "../keyboards/filters";
+import { buildEventTypeKeyboard, buildFilterKeyboard, buildEventMarketSelectKeyboard, MARKET_EVENT_TYPES, getFilterConfigs } from "../keyboards/filters";
 import { isValidAddress, handleWalletAddress } from "../commands/trader";
 import { buildFilterText } from "../utils/monitor-draft";
 
@@ -110,7 +110,7 @@ async function handleFilterInput(ctx: Context, env: Env, awaitingInput: string, 
   const draft = await getDraft(env.DB, telegramId);
   if (!draft || !draft.event_type) return;
 
-  const configs = FILTER_CONFIGS[draft.event_type] ?? [];
+  const configs = getFilterConfigs(draft.event_type, draft.draft_type);
   const filterConfig = configs.find((c) => c.key === awaitingInput);
   if (!filterConfig) return;
 
@@ -156,7 +156,7 @@ async function handleFilterInput(ctx: Context, env: Env, awaitingInput: string, 
   if (!updatedDraft) return;
 
   const filters = JSON.parse(updatedDraft.filters);
-  const keyboard = buildFilterKeyboard(updatedDraft.event_type!, filters);
+  const keyboard = buildFilterKeyboard(updatedDraft.event_type!, filters, updatedDraft.draft_type);
   const msgText = buildFilterText(updatedDraft);
 
   await ctx.api.editMessageText(telegramId, draft.message_id, msgText, {

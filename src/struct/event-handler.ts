@@ -17,6 +17,7 @@ import { verifyWebhookSignature } from "../utils/hmac";
 import {
   getMarketMonitorsByWebhookAndEvent,
   getTraderMonitorsByWebhookAndEvent,
+  getTagMonitorsByWebhookAndEvent,
 } from "../db/monitors";
 import { notifySubscribers } from "../services/notification";
 import { formatMessage, type MarketContext } from "../services/message-builder";
@@ -185,8 +186,11 @@ function matchesMonitorFilters(
       const spikePct = toFiniteNumber(payload.spike_pct);
       const direction = getString(payload, "spike_direction");
       const expectedDirection = typeof filters.spike_direction === "string" ? filters.spike_direction : null;
+      const currentPrice = toFiniteNumber(payload.current_price);
       return (
         matchesMin(filters.min_price_change_pct, spikePct === null ? null : Math.abs(spikePct)) &&
+        matchesMin(filters.min_price, currentPrice) &&
+        matchesMax(filters.max_price, currentPrice) &&
         (expectedDirection === null || expectedDirection === "both" || (direction !== null && direction === expectedDirection))
       );
     }
@@ -260,6 +264,16 @@ function detectEventType(
   return null;
 }
 
+function matchingSubscribers(
+  monitors: { filters: string; telegram_id: number }[],
+  eventType: PolymarketWebhookEvent,
+  payload: WebhookPayload
+): number[] {
+  return monitors
+    .filter((monitor) => matchesMonitorFilters(eventType, payload as Record<string, unknown>, parseStoredFilters(monitor.filters)))
+    .map((monitor) => monitor.telegram_id);
+}
+
 async function collectSubscribers(
   db: D1Database,
   webhookId: string,
@@ -268,22 +282,18 @@ async function collectSubscribers(
 ): Promise<number[]> {
   if (isTraderEvent(eventType)) {
     const monitors = await getTraderMonitorsByWebhookAndEvent(db, webhookId, eventType);
-    return [
-      ...new Set(
-        monitors
-          .filter((monitor) => matchesMonitorFilters(eventType, payload as Record<string, unknown>, parseStoredFilters(monitor.filters)))
-          .map((monitor) => monitor.telegram_id)
-      ),
-    ];
+    return [...new Set(matchingSubscribers(monitors, eventType, payload))];
   }
 
-  const monitors = await getMarketMonitorsByWebhookAndEvent(db, webhookId, eventType);
+  const [marketMonitors, tagMonitors] = await Promise.all([
+    getMarketMonitorsByWebhookAndEvent(db, webhookId, eventType),
+    getTagMonitorsByWebhookAndEvent(db, webhookId, eventType),
+  ]);
   return [
-    ...new Set(
-      monitors
-        .filter((monitor) => matchesMonitorFilters(eventType, payload as Record<string, unknown>, parseStoredFilters(monitor.filters)))
-        .map((monitor) => monitor.telegram_id)
-    ),
+    ...new Set([
+      ...matchingSubscribers(marketMonitors, eventType, payload),
+      ...matchingSubscribers(tagMonitors, eventType, payload),
+    ]),
   ];
 }
 

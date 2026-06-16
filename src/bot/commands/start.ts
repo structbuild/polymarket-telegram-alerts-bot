@@ -5,6 +5,7 @@ import { upsertUser } from "../../db/users";
 import {
   buildMarketOnboardingText,
   buildTraderOnboardingText,
+  buildTagOnboardingText,
   getStartReplyKind,
 } from "../utils/onboarding";
 import { buildWelcomeText } from "../menus/main";
@@ -23,6 +24,10 @@ export function buildStartReplyText(
 
   if (route === "trader") {
     return buildTraderOnboardingText();
+  }
+
+  if (route === "tag") {
+    return buildTagOnboardingText();
   }
 
   return buildWelcomeText(env, firstName, username);

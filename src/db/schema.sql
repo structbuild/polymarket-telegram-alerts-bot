@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS trader_monitors (
     UNIQUE(telegram_id, wallet_address, event_type)
 );
 
+CREATE TABLE IF NOT EXISTS tag_monitors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    scope_type TEXT NOT NULL,
+    scope_value TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    struct_webhook_id TEXT,
+    filters TEXT DEFAULT '{}',
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
+    UNIQUE(telegram_id, scope_type, scope_value, event_type)
+);
+
 CREATE TABLE IF NOT EXISTS monitor_drafts (
     telegram_id INTEGER PRIMARY KEY,
     draft_type TEXT NOT NULL DEFAULT 'market',
@@ -63,3 +77,6 @@ CREATE INDEX IF NOT EXISTS idx_market_mons_condition ON market_monitors(conditio
 CREATE INDEX IF NOT EXISTS idx_market_mons_event_slug ON market_monitors(event_slug, is_active);
 CREATE INDEX IF NOT EXISTS idx_trader_mons_wallet ON trader_monitors(wallet_address, is_active);
 CREATE INDEX IF NOT EXISTS idx_trader_mons_user ON trader_monitors(telegram_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_tag_mons_scope ON tag_monitors(scope_type, scope_value, is_active);
+CREATE INDEX IF NOT EXISTS idx_tag_mons_user ON tag_monitors(telegram_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_tag_mons_webhook ON tag_monitors(struct_webhook_id, is_active);

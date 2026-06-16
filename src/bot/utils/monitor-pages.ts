@@ -3,8 +3,9 @@ import type { Env } from "../../env";
 import {
   getMarketMonitorsByUser,
   getTraderMonitorsByUser,
+  getTagMonitorsByUser,
 } from "../../db/monitors";
-import type { DbMarketMonitor, DbTraderMonitor } from "../../types/database";
+import type { DbMarketMonitor, DbTraderMonitor, DbTagMonitor } from "../../types/database";
 import {
   bold,
   code,
@@ -26,15 +27,19 @@ export {
   parseMonitorSelectionCallbackData,
 } from "./monitor-selection";
 
-type MonitorKind = "market" | "trader";
+type MonitorKind = "market" | "trader" | "tag";
 
 export interface MonitorEntry {
   kind: MonitorKind;
   id: number;
   key: string;
-  sectionLabel: "Markets" | "Traders";
+  sectionLabel: "Markets" | "Traders" | "Tags & Series";
   listLabelHtml: string;
   unsubscribeLabel: string;
+}
+
+function scopeKindLabel(scopeType: string): string {
+  return scopeType === "series" ? "Series" : "Tag";
 }
 
 interface MonitorPage {
@@ -52,7 +57,8 @@ export interface MonitorReply {
 
 export function buildMonitorEntries(
   marketSubs: DbMarketMonitor[],
-  traderSubs: DbTraderMonitor[]
+  traderSubs: DbTraderMonitor[],
+  tagSubs: DbTagMonitor[] = []
 ): MonitorEntry[] {
   return [
     ...marketSubs.map((sub) => ({
@@ -76,6 +82,17 @@ export function buildMonitorEntries(
         sectionLabel: "Traders" as const,
         listLabelHtml: `${listLabelHtml} (${escapeHtml(getEventTypeLabel(sub.event_type))})`,
         unsubscribeLabel: `[Trader] ${truncate(unsubscribeLabel, 30)}`,
+      };
+    }),
+    ...tagSubs.map((sub) => {
+      const kindLabel = scopeKindLabel(sub.scope_type);
+      return {
+        kind: "tag" as const,
+        id: sub.id,
+        key: buildMonitorKey("tag", sub.id),
+        sectionLabel: "Tags & Series" as const,
+        listLabelHtml: `${kindLabel} ${code(escapeHtml(sub.scope_value))} (${escapeHtml(getEventTypeLabel(sub.event_type))})`,
+        unsubscribeLabel: `[${kindLabel}] ${truncate(sub.scope_value, 30)}`,
       };
     }),
   ];
@@ -178,12 +195,13 @@ async function getUserMonitorEntries(
   env: Env,
   telegramId: number
 ): Promise<MonitorEntry[]> {
-  const [marketSubs, traderSubs] = await Promise.all([
+  const [marketSubs, traderSubs, tagSubs] = await Promise.all([
     getMarketMonitorsByUser(env.DB, telegramId),
     getTraderMonitorsByUser(env.DB, telegramId),
+    getTagMonitorsByUser(env.DB, telegramId),
   ]);
 
-  return buildMonitorEntries(marketSubs, traderSubs);
+  return buildMonitorEntries(marketSubs, traderSubs, tagSubs);
 }
 
 function buildUnsubscribeText(
@@ -241,10 +259,14 @@ export async function buildUnsubscribeReply(
   const selectedMonitorKeySet = new Set(sanitizedSelection);
   const keyboard = new InlineKeyboard();
 
+  const removalPrefix: Record<MonitorKind, string> = {
+    market: "urm",
+    trader: "urt",
+    tag: "urg",
+  };
+
   for (const entry of monitorPage.entries) {
-    const callbackData = entry.kind === "market"
-      ? `urm:${monitorPage.page}:${entry.id}`
-      : `urt:${monitorPage.page}:${entry.id}`;
+    const callbackData = `${removalPrefix[entry.kind]}:${monitorPage.page}:${entry.id}`;
     const isSelected = selectedMonitorKeySet.has(entry.key);
     keyboard
       .text(`${isSelected ? "☑️" : "⏹️"} ${entry.unsubscribeLabel}`, callbackData)

@@ -11,7 +11,7 @@ A Telegram bot that sends real-time Polymarket alerts -- probability spikes, pri
 Send any Polymarket URL to the bot and choose from:
 
 - **Probability Spike** -- rapid probability changes on an outcome. Filter by minimum change %, direction (up/down), and time window.
-- **Price Spike** -- rapid price movements. Same filters as probability spike.
+- **Price Spike** -- rapid price movements. Filter by minimum change %, direction, time window, and a min/max price band so low-price markets (where a 1¢ move is a huge %) don't spam you.
 - **Price Threshold** -- an outcome's price crosses a target level. Filter by min/max price.
 - **Market Metrics** -- periodic activity summaries (volume, fees, transactions). Filter by volume range, min fees, min transactions, and timeframes (1m to 30d).
 - **Volume Spike** -- a market's volume grows by a configured multiple within a window. Filter by minimum spike multiple and timeframes.
@@ -31,9 +31,18 @@ Use `/trader <wallet_address>` to watch any wallet:
 
 First Trade and All Trades support min USD amount (minimum $1) and probability range filters.
 
+### Tag & Series Monitoring
+
+Use `/tag <tag>` or `/series <slug>` to alert across **all** markets carrying a tag/category or belonging to a series -- no specific market required:
+
+- **`/tag Sports`** -- monitor every market in the `Sports` tag/category (e.g. `/tag "FIFA World Cup"`).
+- **`/series nfl`** -- monitor every market in the `nfl` series (use the series slug from the Polymarket URL, e.g. `nfl`, `epl`).
+
+Pick **Price Spike**, **Price Threshold**, or **Close-to-Bond** as the event type, then configure the same filters as the market flow. The tag/series itself is the scope, so those filter buttons are hidden.
+
 ### How It Works
 
-The bot uses an interactive conversation flow -- after you send a market URL or wallet address, it presents inline keyboards to pick an event type, configure optional filters, and confirm. Each monitor registers a webhook through the Struct API, with alerts delivered to your Telegram chat in real time.
+The bot uses an interactive conversation flow -- after you send a market URL, wallet address, or a `/tag`/`/series` command, it presents inline keyboards to pick an event type, configure optional filters, and confirm. Each monitor registers a webhook through the Struct API, with alerts delivered to your Telegram chat in real time.
 
 ## Tech Stack
 
@@ -151,6 +160,8 @@ Telegram's command menu/autocomplete is synced when you run `npm run setup`, `np
 | `/list` | View your active monitors |
 | `/unsubscribe` | Remove monitors via inline buttons |
 | `/trader <address>` | Start monitoring a wallet |
+| `/tag <tag>` | Monitor all markets with a tag/category |
+| `/series <slug>` | Monitor all markets in a series |
 | `/example [1-11]` | Preview each alert format |
 
 You can also send a **Polymarket URL** directly to start setting up a market monitor, or a **wallet address** (`0x...`) to start setting up a trader monitor.

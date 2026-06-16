@@ -32,9 +32,21 @@ export interface DbTraderMonitor {
   created_at: string;
 }
 
+export interface DbTagMonitor {
+  id: number;
+  telegram_id: number;
+  scope_type: "tag" | "series";
+  scope_value: string;
+  event_type: string;
+  struct_webhook_id: string | null;
+  filters: string;
+  is_active: number;
+  created_at: string;
+}
+
 export interface DbMonitorDraft {
   telegram_id: number;
-  draft_type: "market" | "trader";
+  draft_type: "market" | "trader" | "tag" | "series";
   condition_id: string | null;
   market_slug: string | null;
   market_title: string | null;

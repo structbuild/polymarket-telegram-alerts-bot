@@ -6,6 +6,7 @@ import type {
   DbMonitorDraft,
   DbMonitorRemovalSession,
   DbTraderMonitor,
+  DbTagMonitor,
 } from "../../types/database";
 import { createStructClient } from "../../struct/client";
 import {
@@ -23,6 +24,7 @@ import {
 import {
   addMarketMonitor,
   addTraderMonitor,
+  addTagMonitor,
   countActiveMonitorWebhookReferences,
   getAllMonitorWebhookIds,
   getMarketMonitor,
@@ -31,9 +33,13 @@ import {
   getTraderMonitor,
   getTraderMonitorByUserWalletAndEvent,
   getTraderMonitorsByWalletAndEvent,
+  getTagMonitor,
+  getTagMonitorByUserScopeAndEvent,
+  getTagMonitorsByScopeAndEvent,
   removeAllMonitors,
   removeMarketMonitor,
   removeTraderMonitor,
+  removeTagMonitor,
 } from "../../db/monitors";
 import {
   getDraft,
@@ -55,7 +61,7 @@ import {
   buildMultiOptionsKeyboard,
   buildEventTypeKeyboard,
   buildEventMarketSelectKeyboard,
-  FILTER_CONFIGS,
+  getFilterConfigs,
   MARKET_EVENT_TYPES,
   TRADER_EVENT_TYPES,
 } from "../keyboards/filters";
@@ -65,6 +71,7 @@ import {
   getEventTypeLabel,
   requiresMinUsd,
   traderScopeFilterKey,
+  tagScopeFilterKey,
 } from "../utils/monitor-draft";
 import { upsertUser } from "../../db/users";
 import {
@@ -171,9 +178,10 @@ async function getActiveMonitorRemovalSessionForCallback(
 
 function sanitizeMonitorFilters(
   eventType: string,
-  filters: DraftFilters
+  filters: DraftFilters,
+  draftType?: string
 ): Record<string, unknown> {
-  const allowedKeys = new Set((FILTER_CONFIGS[eventType] ?? []).map((config) => config.key));
+  const allowedKeys = new Set(getFilterConfigs(eventType, draftType).map((config) => config.key));
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(filters)) {
@@ -280,6 +288,22 @@ async function removeTraderMonitorForUser(
   return monitor;
 }
 
+async function removeTagMonitorForUser(
+  env: Env,
+  telegramId: number,
+  monitorId: number
+): Promise<DbTagMonitor | null> {
+  const monitor = await getTagMonitor(env.DB, monitorId);
+  if (!monitor || monitor.telegram_id !== telegramId || monitor.is_active !== 1) {
+    return null;
+  }
+
+  const deps = webhookDeps(env);
+  await removeTagMonitor(env.DB, monitorId);
+  await deleteOrphanedWebhookIdsStrict(env.DB, deps, [monitor.struct_webhook_id]);
+  return monitor;
+}
+
 export function registerCallbackHandler(bot: Bot, env: Env): void {
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -376,7 +400,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
         const filters = applyFilterPatch(existingFilters, filterPatch);
         await ctx.editMessageText(buildFilterText({ ...draft, event_type: eventType }), {
           parse_mode: "HTML",
-          reply_markup: buildFilterKeyboard(eventType, filters),
+          reply_markup: buildFilterKeyboard(eventType, filters, draft.draft_type),
         });
         await ctx.answerCallbackQuery();
         return;
@@ -391,7 +415,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           return;
         }
 
-        const configs = FILTER_CONFIGS[draft.event_type] ?? [];
+        const configs = getFilterConfigs(draft.event_type, draft.draft_type);
         const config = configs.find((c) => c.key === filterName);
         if (!config) {
           await ctx.answerCallbackQuery("Unknown filter.");
@@ -402,8 +426,8 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           await updateDraftAwaitingInput(env.DB, telegramId, filterName);
           await ctx.answerCallbackQuery();
           const prompt = config.type === "list"
-            ? `Enter ${config.label} as a comma-separated list (e.g. crypto, politics):`
-            : `Enter value for ${config.label}:`;
+            ? `Enter ${config.label} as a comma-separated list (e.g. ${config.example ?? "value1, value2"}):`
+            : `Enter value for ${config.label}${config.example ? ` — e.g. ${config.example}` : ""}:`;
           const promptMsg = await ctx.reply(prompt);
           await updateDraftFilter(env.DB, telegramId, "_prompt_message_id", promptMsg.message_id);
           return;
@@ -444,7 +468,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
           return;
         }
 
-        const configs = FILTER_CONFIGS[draft.event_type] ?? [];
+        const configs = getFilterConfigs(draft.event_type, draft.draft_type);
         const config = configs.find((c) => c.key === filterName);
         if (!config) {
           await ctx.answerCallbackQuery("Unknown filter.");
@@ -484,7 +508,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
         } else {
           await ctx.editMessageText(buildFilterText(refreshedDraft), {
             parse_mode: "HTML",
-            reply_markup: buildFilterKeyboard(refreshedDraft.event_type, updatedFilters),
+            reply_markup: buildFilterKeyboard(refreshedDraft.event_type, updatedFilters, refreshedDraft.draft_type),
           });
         }
 
@@ -646,6 +670,19 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
             if (monitor) {
               removedCount++;
             }
+            continue;
+          }
+
+          if (monitorKey.startsWith("tag:")) {
+            const monitorId = Number.parseInt(monitorKey.slice("tag:".length), 10);
+            if (!Number.isInteger(monitorId)) {
+              continue;
+            }
+
+            const monitor = await removeTagMonitorForUser(env, telegramId, monitorId);
+            if (monitor) {
+              removedCount++;
+            }
           }
         }
 
@@ -680,7 +717,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
         const filters = parseDraftFilters(draft.filters);
 
         const eventType = draft.event_type as PolymarketWebhookEvent;
-        const fullFilters: Record<string, unknown> = sanitizeMonitorFilters(eventType, filters);
+        const fullFilters: Record<string, unknown> = sanitizeMonitorFilters(eventType, filters, draft.draft_type);
         errorContext = {
           ...errorContext,
           operation: "monitor_setup",
@@ -815,6 +852,73 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
               { parse_mode: "HTML" }
             );
           }
+        } else if (draft.draft_type === "tag" || draft.draft_type === "series") {
+          const scopeType = draft.draft_type;
+          const scopeValue = draft.market_title;
+          if (!scopeValue) {
+            await ctx.answerCallbackQuery(`This monitor draft is missing a ${scopeType} value. Start again with /${scopeType}.`);
+            return;
+          }
+
+          fullFilters[tagScopeFilterKey(scopeType)] = [scopeValue];
+          const structFilters = normalizeStructWebhookFilters(eventType, fullFilters);
+          const description = `${getEventTypeLabel(draft.event_type)} — ${scopeType} ${scopeValue}`;
+          const existingMonitor = await getTagMonitorByUserScopeAndEvent(
+            env.DB,
+            telegramId,
+            scopeType,
+            scopeValue,
+            draft.event_type
+          );
+          const candidateMonitors = await getTagMonitorsByScopeAndEvent(
+            env.DB,
+            scopeType,
+            scopeValue,
+            draft.event_type
+          );
+          const reusableWebhookId = await findReusableMonitorWebhook(
+            deps,
+            eventType,
+            structFilters,
+            uniqueWebhookIds(candidateMonitors.map((monitor) => monitor.struct_webhook_id))
+          );
+          const webhookId = reusableWebhookId ?? await createMonitorWebhook(deps, eventType, structFilters, description);
+          const createdWebhook = reusableWebhookId === null;
+          errorContext = {
+            ...errorContext,
+            draftType: scopeType,
+            scopeValue,
+            description,
+            structFilters,
+            existingWebhookId: existingMonitor?.struct_webhook_id ?? null,
+            reusableWebhookId,
+            webhookId,
+            createdWebhook,
+          };
+          try {
+            await addTagMonitor(
+              env.DB,
+              telegramId,
+              scopeType,
+              scopeValue,
+              draft.event_type,
+              webhookId,
+              fullFilters
+            );
+          } catch (error) {
+            if (createdWebhook) {
+              await deleteMonitorWebhook(deps, webhookId);
+            }
+            throw error;
+          }
+          if (existingMonitor?.struct_webhook_id && existingMonitor.struct_webhook_id !== webhookId) {
+            await deleteOrphanedWebhookIdsStrict(env.DB, deps, [existingMonitor.struct_webhook_id]);
+          }
+          await deleteDraft(env.DB, telegramId);
+          await ctx.editMessageText(
+            `Now monitoring ${bold(getEventTypeLabel(draft.event_type))} for ${scopeType} ${code(escapeHtml(scopeValue))}`,
+            { parse_mode: "HTML" }
+          );
         } else {
           if (!draft.wallet_address) {
             await ctx.answerCallbackQuery("This monitor draft is missing a wallet address. Start again with /trader.");
@@ -1053,7 +1157,7 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
             filters: parseStoredFilters(monitor.filters),
           };
           await removeMarketMonitorForUser(env, telegramId, legacyRemoval.id);
-        } else {
+        } else if (legacyRemoval.kind === "trader") {
           const monitor = await getTraderMonitor(env.DB, legacyRemoval.id);
           if (!monitor || monitor.telegram_id !== telegramId || monitor.is_active !== 1) {
             await ctx.answerCallbackQuery("Monitor not found.");
@@ -1071,15 +1175,39 @@ export function registerCallbackHandler(bot: Bot, env: Env): void {
             filters: parseStoredFilters(monitor.filters),
           };
           await removeTraderMonitorForUser(env, telegramId, legacyRemoval.id);
+        } else {
+          const monitor = await getTagMonitor(env.DB, legacyRemoval.id);
+          if (!monitor || monitor.telegram_id !== telegramId || monitor.is_active !== 1) {
+            await ctx.answerCallbackQuery("Monitor not found.");
+            return;
+          }
+
+          errorContext = {
+            ...errorContext,
+            operation: "monitor_delete",
+            monitorType: "tag",
+            monitorId: monitor.id,
+            scopeType: monitor.scope_type,
+            scopeValue: monitor.scope_value,
+            eventType: monitor.event_type,
+            structWebhookId: monitor.struct_webhook_id,
+            filters: parseStoredFilters(monitor.filters),
+          };
+          await removeTagMonitorForUser(env, telegramId, legacyRemoval.id);
         }
 
+        const removalLabel = legacyRemoval.kind === "market"
+          ? "Market"
+          : legacyRemoval.kind === "trader"
+            ? "Trader"
+            : "Tag/Series";
         const callbackMessageId = ctx.callbackQuery.message?.message_id;
         if (typeof callbackMessageId === "number") {
           await createMonitorRemovalSession(env.DB, telegramId, callbackMessageId);
         }
         await refreshUnsubscribeMessage(ctx, env, telegramId, [], legacyRemoval.page);
         await ctx.answerCallbackQuery(
-          `${legacyRemoval.kind === "market" ? "Market" : "Trader"} monitor removed.`
+          `${removalLabel} monitor removed.`
         );
         return;
       }

@@ -18,16 +18,28 @@ export const TRADER_EVENT_TYPES: { key: PolymarketWebhookEvent; label: string }[
   { key: "trader_global_pnl", label: "Global PnL" },
 ];
 
+export const TAG_EVENT_TYPES: { key: PolymarketWebhookEvent; label: string }[] = [
+  { key: "price_spike", label: "Price Spike" },
+  { key: "price_threshold", label: "Price Threshold" },
+  { key: "close_to_bond", label: "Close-to-Bond" },
+];
+
 export interface FilterConfig {
   key: string;
   label: string;
   type: "number" | "boolean" | "enum" | "multi" | "list";
   options?: { value: string; label: string }[];
   wide?: boolean;
+  example?: string;
 }
 
-const TAG_FILTER: FilterConfig = { key: "tags", label: "Tags", type: "list", wide: true };
-const SERIES_FILTER: FilterConfig = { key: "series_slugs", label: "Series", type: "list", wide: true };
+const TAG_FILTER: FilterConfig = { key: "tags", label: "Tags", type: "list", wide: true, example: "Sports, Politics" };
+const SERIES_FILTER: FilterConfig = { key: "series_slugs", label: "Series", type: "list", wide: true, example: "nfl, epl" };
+
+const MIN_PRICE_FILTER: FilterConfig = { key: "min_price", label: "Min Price", type: "number", example: "0.5 (price is 0.00–1.00)" };
+const MAX_PRICE_FILTER: FilterConfig = { key: "max_price", label: "Max Price", type: "number", example: "0.5 (price is 0.00–1.00)" };
+const MIN_PROBABILITY_FILTER: FilterConfig = { key: "min_probability", label: "Min Probability", type: "number", example: "0.5 (probability is 0.00–1.00)" };
+const MAX_PROBABILITY_FILTER: FilterConfig = { key: "max_probability", label: "Max Probability", type: "number", example: "0.5 (probability is 0.00–1.00)" };
 
 const SPIKE_DIRECTION_OPTIONS = [
   { value: "both", label: "Both" },
@@ -62,6 +74,8 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
   ],
   price_spike: [
     { key: "min_price_change_pct", label: "Min Change %", type: "number" },
+    MIN_PRICE_FILTER,
+    MAX_PRICE_FILTER,
     { key: "spike_direction", label: "Direction", type: "enum", options: SPIKE_DIRECTION_OPTIONS },
     { key: "window_secs", label: "Window (secs)", type: "number" },
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
@@ -69,8 +83,8 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
     SERIES_FILTER,
   ],
   price_threshold: [
-    { key: "min_price", label: "Min Price", type: "number" },
-    { key: "max_price", label: "Max Price", type: "number" },
+    MIN_PRICE_FILTER,
+    MAX_PRICE_FILTER,
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
     TAG_FILTER,
     SERIES_FILTER,
@@ -90,16 +104,16 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
     { key: "timeframes", label: "Timeframes", type: "multi", options: TIMEFRAME_OPTIONS, wide: true },
   ],
   close_to_bond: [
-    { key: "min_probability", label: "Min Probability", type: "number" },
-    { key: "max_probability", label: "Max Probability", type: "number" },
+    MIN_PROBABILITY_FILTER,
+    MAX_PROBABILITY_FILTER,
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
     TAG_FILTER,
     SERIES_FILTER,
   ],
   trader_first_trade: [
     { key: "min_usd_value", label: "Min USD", type: "number" },
-    { key: "min_probability", label: "Min Prob", type: "number" },
-    { key: "max_probability", label: "Max Prob", type: "number" },
+    MIN_PROBABILITY_FILTER,
+    MAX_PROBABILITY_FILTER,
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
   ],
   trader_new_market: [
@@ -107,8 +121,8 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
   ],
   trader_new_trade: [
     { key: "min_usd_value", label: "Min USD", type: "number" },
-    { key: "min_probability", label: "Min Prob", type: "number" },
-    { key: "max_probability", label: "Max Prob", type: "number" },
+    MIN_PROBABILITY_FILTER,
+    MAX_PROBABILITY_FILTER,
     { key: "exclude_shortterm_markets", label: "Excl. Short-term", type: "boolean" },
   ],
   trader_global_pnl: [
@@ -117,6 +131,16 @@ export const FILTER_CONFIGS: Record<string, FilterConfig[]> = {
     { key: "timeframes", label: "Timeframes", type: "multi", options: PNL_TIMEFRAME_OPTIONS, wide: true },
   ],
 };
+
+const SCOPE_FILTER_KEYS = new Set(["tags", "series_slugs"]);
+
+export function getFilterConfigs(eventType: string, draftType?: string): FilterConfig[] {
+  const configs = FILTER_CONFIGS[eventType] ?? [];
+  if (draftType === "tag" || draftType === "series") {
+    return configs.filter((config) => !SCOPE_FILTER_KEYS.has(config.key));
+  }
+  return configs;
+}
 
 export function buildEventTypeKeyboard(
   eventTypes: { key: string; label: string }[]
@@ -133,9 +157,10 @@ export function buildEventTypeKeyboard(
 
 export function buildFilterKeyboard(
   eventType: string,
-  currentFilters: Record<string, unknown>
+  currentFilters: Record<string, unknown>,
+  draftType?: string
 ): InlineKeyboard {
-  const configs = FILTER_CONFIGS[eventType] ?? [];
+  const configs = getFilterConfigs(eventType, draftType);
   const kb = new InlineKeyboard();
   let rowCount = 0;
 

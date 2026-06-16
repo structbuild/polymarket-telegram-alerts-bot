@@ -39,6 +39,20 @@ export async function upsertTraderDraft(
     .run();
 }
 
+export async function upsertTagDraft(
+  db: D1Database,
+  telegramId: number,
+  scopeType: "tag" | "series",
+  scopeValue: string
+): Promise<void> {
+  await db
+    .prepare(
+      "INSERT OR REPLACE INTO monitor_drafts (telegram_id, draft_type, market_title, filters, created_at) VALUES (?, ?, ?, '{}', datetime('now'))"
+    )
+    .bind(telegramId, scopeType, scopeValue)
+    .run();
+}
+
 export async function updateDraftEventType(
   db: D1Database,
   telegramId: number,

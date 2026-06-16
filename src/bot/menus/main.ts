@@ -1,7 +1,7 @@
 import { Menu } from "@grammyjs/menu";
 import type { Env } from "../../env";
 import { bold, escapeHtml, link } from "../../utils/formatting";
-import { buildMarketOnboardingText, buildTraderOnboardingText } from "../utils/onboarding";
+import { buildMarketOnboardingText, buildTraderOnboardingText, buildTagOnboardingText } from "../utils/onboarding";
 import { sendUnsubscribeReply } from "../commands/unsubscribe";
 import { BOT_COMMANDS } from "../commands/catalog";
 import { buildMonitorListReply } from "../utils/monitor-pages";
@@ -33,7 +33,9 @@ function buildWelcomeText(env: Pick<Env, "BOT_INFO">, firstName?: string, userna
 		"",
 		`🔎 ${buildStartLink(botUsername, "trader", "Track")} trader wallets and get alerts on their activity.`,
 		"",
-		"Send me a Polymarket event URL or wallet address to get started.",
+		`🏷 ${buildStartLink(botUsername, "tag", "Filter")} by tag, category or series with /tag and /series.`,
+		"",
+		"Send a Polymarket event URL or wallet address, or use /tag or /series to get started.",
 	].join("\n");
 }
 
@@ -42,6 +44,7 @@ const HELP_TEXT = [
 	"",
 	bold("How to set up a monitor:"),
 	"Send a condition ID (0x...) or a Polymarket event URL directly in the chat.",
+	"Use /tag <tag> or /series <slug> to monitor every market in a tag/category or series.",
 	"",
 	bold("Market alert types:"),
 	"- Probability & price spikes",
@@ -68,6 +71,10 @@ export function createMainMenu(env: Env) {
 		})
 		.text("👤 Trader", async (ctx) => {
 			await ctx.reply(buildTraderOnboardingText(), { parse_mode: "HTML" });
+		})
+		.row()
+		.text("🏷 Tags & Series", async (ctx) => {
+			await ctx.reply(buildTagOnboardingText(), { parse_mode: "HTML" });
 		})
 		.row()
 		.submenu("🔍 Monitors", "monitors-menu", async (ctx) => {
